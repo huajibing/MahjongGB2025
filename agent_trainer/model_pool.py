@@ -1,6 +1,7 @@
 from multiprocessing.shared_memory import SharedMemory, ShareableList
 import _pickle as cPickle
 import time
+import threading
 
 class ModelPoolServer:
     
@@ -16,8 +17,14 @@ class ModelPoolServer:
         n = self.n % self.capacity
         if self.model_list[n]:
             # FIFO: release shared memory of older model
-            self.model_list[n]['memory'].unlink()
-        
+            try:
+                if self.model_list[n] and 'memory' in self.model_list[n]:
+                    self.model_list[n]['memory'].unlink()
+            except FileNotFoundError:
+                pass  # 已经被删除了
+            except Exception as e:
+                print(f"Warning: Failed to unlink shared memory: {e}")
+
         data = cPickle.dumps(state_dict) # model parameters serialized to bytes
         memory = SharedMemory(create = True, size = len(data))
         memory.buf[:] = data[:]
@@ -35,6 +42,7 @@ class ModelPoolServer:
 class ModelPoolClient:
     
     def __init__(self, name):
+        self._lock = threading.Lock()
         while True:
             try:
                 self.shared_model_list = ShareableList(name = name)
@@ -48,12 +56,13 @@ class ModelPoolClient:
         self._update_model_list()
     
     def _update_model_list(self):
-        n = self.shared_model_list[-1]
-        if n > self.n:
-            # new models available, update local list
-            for i in range(max(self.n, n - self.capacity), n):
-                self.model_list[i % self.capacity] = cPickle.loads(self.shared_model_list[i % self.capacity])
-            self.n = n
+        with self._lock:
+            n = self.shared_model_list[-1]
+            if n > self.n:
+                # new models available, update local list
+                for i in range(max(self.n, n - self.capacity), n):
+                    self.model_list[i % self.capacity] = cPickle.loads(self.shared_model_list[i % self.capacity])
+                self.n = n
     
     def get_model_list(self):
         self._update_model_list()

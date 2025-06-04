@@ -18,8 +18,8 @@ import sys
 
 if __name__ == '__main__':
     model = CNNModel()
-    data_dir = '/data/testrl.pt'
-    model.load_state_dict(torch.load(data_dir, map_location = torch.device('cpu')))
+    data_dir = 'model/model_2583.pt'
+    model.load_state_dict(torch.load(data_dir, map_location = torch.device('cpu'), weights_only=False))
     model.train(False)
     input() # 1
     while True:
@@ -95,5 +95,5 @@ if __name__ == '__main__':
                         response2 = obs2response(model, obs)
                         print(' '.join([response[0].upper(), *response[1:], response2.split()[-1]]))
                         agent.request2obs('Player %d Un' % seatWind + ' '.join(response))
-        print('>>>BOTZONE_REQUEST_KEEP_RUNNING<<<')
+        # print('>>>BOTZONE_REQUEST_KEEP_RUNNING<<<')
         sys.stdout.flush()

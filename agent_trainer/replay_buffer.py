@@ -11,7 +11,10 @@ class ReplayBuffer:
         self.buffer = None
     
     def push(self, samples): # only called by actors
-        self.queue.put(samples)
+        try:
+            self.queue.put(samples, timeout=1.0)  # 添加超时
+        except:
+            print("Warning: ReplayBuffer queue is full, dropping episode data")
     
     def _flush(self):
         if self.buffer is None: # called first time by learner
