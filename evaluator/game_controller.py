@@ -186,6 +186,20 @@ class GameController:
             self._start_agents()
             game_results["reason"] = "Agents started, game initializing."
 
+            # Send initial newline to satisfy agent's first input()
+            self.game_log.append("Sending initial newline to all agents...")
+            for i, agent_proc in enumerate(self.agents):
+                try:
+                    # agent.send_request already adds a newline. Sending an empty string
+                    # will effectively just send the newline.
+                    agent_proc.send_request("")
+                    self.game_log.append(f"Sent initial newline to Agent {i}")
+                except Exception as e:
+                    self._log_error(f"Failed to send initial newline to agent {i}: {e}")
+                    # This could be a critical error, might need to stop the game
+                    raise RuntimeError(f"Could not send initial newline to agent {i} for game {self.game_id}.") from e
+            self.game_log.append("Initial newlines sent to all agents.")
+
             # Env reset returns initial obs, reward, done
             # For now, obs from env.reset() is not directly used to message agents, specific messages are crafted
             self.env.reset(prevalentWind=prevalent_wind_initial, tileWall=tile_wall_str_initial)
@@ -194,14 +208,14 @@ class GameController:
             # Initial Handshake (Type 0 and Type 1)
             for i in range(4):
                 # Type 0: INIT "ID QUAN"
-                initial_setup_msg = f"{i} {self.env.prevalentWind}" # Game sends player_id and prevalent_wind
+                initial_setup_msg = f"0 {i} {self.env.prevalentWind}" # Game sends player_id and prevalent_wind
                 self._send_to_agent(i, initial_setup_msg, log_prefix="SEND_INIT")
                 response0 = self._get_player_response(i, timeout_seconds=5, context="initial_setup_type_0")
                 if response0.upper() != "PASS": raise Exception(f"Agent {i} bad response to Type 0 (INIT): '{response0}', expected PASS.")
 
                 # Type 1: HAND "TILE1 TILE2 ..." (13 tiles)
                 hand_str = " ".join(self.env.hands[i])
-                initial_hand_msg = f"{hand_str}" # Game sends only the hand
+                initial_hand_msg = f"1 {hand_str}" # Game sends only the hand
                 self._send_to_agent(i, initial_hand_msg, log_prefix="SEND_HAND")
                 response1 = self._get_player_response(i, timeout_seconds=5, context="initial_hand_type_1")
                 if response1.upper() != "PASS": raise Exception(f"Agent {i} bad response to Type 1 (HAND): '{response1}', expected PASS.")
@@ -266,13 +280,13 @@ class GameController:
                     bugang_tile = self.env.curTile
                     player_who_buganged = self.env.curPlayer
 
-                    # Message Type 6: OTHER_BUGANG "6 PLAYER_ID TILE" (who buganged, what tile)
-                    # This message goes to all other players.
-                    msg_to_agents = f"6 {player_who_buganged} {bugang_tile}"
+                    # Message Type 3: OTHER_ACTION "3 PLAYER_ID ACTION_TYPE TILE" (who acted, what action, what tile)
+                    # For BUGANG, this notifies other players who might Qianggang.
+                    msg_to_agents = f"3 {player_who_buganged} BUGANG {bugang_tile}"
                     for i in range(4):
                         if i == player_who_buganged: continue
 
-                        self._send_to_agent(i, msg_to_agents, log_prefix=f"SEND_OTHER_BUGANG_TO_P{i}")
+                        self._send_to_agent(i, msg_to_agents, log_prefix=f"SEND_BUGANG_ACTION_TO_P{i}") # Log prefix updated for clarity
                         agent_response_str = self._get_player_response(i, timeout_seconds=10, context=f"react_to_bugang_by_P{player_who_buganged}")
                         # For Qianggang Hu, response should be "HU" or "PASS"
                         actions_for_env_step[i] = agent_response_str
