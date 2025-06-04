@@ -73,85 +73,197 @@ class MahjongGBEnv():
 
     def step(self, action_dict):
         try:
-            if self.state == 0:
-                # After Chi/Peng, prepare to Play
-                response = "PLAY W1".split() # Placeholder action for curPlayer
-                if response[0] == 'PLAY':
-                    self._discard(self.curPlayer, response[1])
+            if self.state == 0: # After Chi/Peng, current player needs to play a tile
+                action_str = action_dict.get(self.curPlayer)
+                if not action_str:
+                    raise Error(f"Missing action for player {self.curPlayer} in state 0")
+
+                action_parts = action_str.split()
+                action_type = action_parts[0]
+
+                if action_type == 'PLAY':
+                    if len(action_parts) < 2:
+                        raise Error(f"Invalid PLAY action for player {self.curPlayer}: Missing tile")
+                    tile_to_discard = action_parts[1]
+                    self._discard(self.curPlayer, tile_to_discard)
                 else:
-                    raise Error(self.curPlayer)
+                    raise Error(f"Invalid action type {action_type} for player {self.curPlayer} in state 0. Expected PLAY.")
                 self.isAboutKong = False
-            elif self.state == 1:
-                # After Draw, prepare to Hu/Play/Gang/BuGang
-                response = "PLAY W1".split() # Placeholder action for curPlayer
-                if response[0] == 'HU':
-                    self.shownTiles[self.curTile] += 1
-                    self._checkMahjong(self.curPlayer, isSelfDrawn = True, isAboutKong = self.isAboutKong)
-                elif response[0] == 'PLAY':
-                    self.hands[self.curPlayer].append(self.curTile)
-                    self._discard(self.curPlayer, response[1])
-                elif response[0] == 'GANG' and not self.myWallLast and not self.wallLast:
-                    self._concealedKong(self.curPlayer, response[1])
-                elif response[0] == 'BUGANG' and not self.myWallLast and not self.wallLast:
-                    self._promoteKong(self.curPlayer, response[1])
-                else:
-                    raise Error(self.curPlayer)
-            elif self.state == 2:
-                # After Play, prepare to Chi/Peng/Gang/Hu/Pass
-                responses = {i : "PASS" for i in range(4) if i != self.curPlayer} # Placeholder actions for others
-                t = {i : responses[i].split() for i in responses}
-                # Priority: Hu > Peng/Gang > Chi
-                for j in range(1, 4):
-                    i = (self.curPlayer + j) % 4
-                    if t[i][0] == 'HU':
-                        self._checkMahjong(i)
-                        break
-                else:
-                    for j in range(1, 4):
-                        i = (self.curPlayer + j) % 4
-                        if t[i][0] == 'GANG' and self._canDrawTile(i) and not self.wallLast:
-                            self._kong(i, self.curTile)
-                            break
-                        elif t[i][0] == 'PENG' and not self.wallLast:
-                            self._pung(i, self.curTile)
-                            break
+                self.obs = {}
+
+            elif self.state == 1: # After Draw, current player needs to Hu/Play/Gang/BuGang
+                action_str = action_dict.get(self.curPlayer)
+                if not action_str:
+                    raise Error(f"Missing action for player {self.curPlayer} in state 1")
+
+                action_parts = action_str.split()
+                action_type = action_parts[0]
+
+                if action_type == 'HU':
+                    self.shownTiles[self.curTile] += 1 # Assuming curTile is the winning tile
+                    self._checkMahjong(self.curPlayer, isSelfDrawn=True, isAboutKong=self.isAboutKong)
+                elif action_type == 'PLAY':
+                    if len(action_parts) < 2:
+                        raise Error(f"Invalid PLAY action for player {self.curPlayer}: Missing tile")
+                    tile_to_discard = action_parts[1]
+                    # Player has already drawn, so curTile is in their hand conceptually before PLAY
+                    # self.hands[self.curPlayer].append(self.curTile) # This is done in _draw, hand is updated before player makes decision
+                    self._discard(self.curPlayer, tile_to_discard)
+                elif action_type == 'GANG':
+                    if len(action_parts) < 2:
+                        raise Error(f"Invalid GANG action for player {self.curPlayer}: Missing tile")
+                    tile_to_gang = action_parts[1]
+                    if not self.myWallLast and not self.wallLast:
+                        self._concealedKong(self.curPlayer, tile_to_gang)
                     else:
-                        i = (self.curPlayer + 1) % 4
-                        if t[i][0] == 'CHI' and not self.wallLast:
-                            self._chow(i, t[i][1])
-                        else:
-                            for j in range(1, 4):
-                                i = (self.curPlayer + j) % 4
-                                if t[i][0] != 'PASS': raise Error(i)
-                            if self.wallLast:
-                                # A draw
-                                self.obs = {} # Placeholder: obs updated by game logic directly
-                                self.reward = [0, 0, 0, 0]
-                                self.done = True
-                            else:
-                                # Next player
-                                self.curPlayer = (self.curPlayer + 1) % 4
-                                self._draw(self.curPlayer)
-            elif self.state == 3:
-                # After BuGang, prepare to Hu/Pass
-                responses = {i : "PASS" for i in range(4) if i != self.curPlayer} # Placeholder actions for others
-                for j in range(1, 4):
-                    i = (self.curPlayer + j) % 4
-                    if responses[i] == 'HU':
-                        self._checkMahjong(i, isAboutKong = True)
-                        break
+                        raise Error(f"Cannot GANG for player {self.curPlayer}: Wall last condition.")
+                elif action_type == 'BUGANG':
+                    if len(action_parts) < 2:
+                        raise Error(f"Invalid BUGANG action for player {self.curPlayer}: Missing tile")
+                    tile_to_bugang = action_parts[1]
+                    if not self.myWallLast and not self.wallLast:
+                        self._promoteKong(self.curPlayer, tile_to_bugang)
+                    else:
+                        raise Error(f"Cannot BUGANG for player {self.curPlayer}: Wall last condition.")
                 else:
+                    raise Error(f"Invalid action type {action_type} for player {self.curPlayer} in state 1.")
+                self.obs = {}
+
+            elif self.state == 2: # After Play, other players can Chi/Peng/Gang/Hu/Pass
+                # Priority: HU > GANG/PENG > CHI
+                # Order of checking players: next player, player across, previous player
+
+                action_processed = False
+                hu_action = None
+                gang_peng_action = None
+                chi_action = None
+
+                player_actions = {}
+                for j in range(1, 4):
+                    p_idx = (self.curPlayer + j) % 4
+                    action_str = action_dict.get(p_idx)
+                    if not action_str:
+                        # Assuming PASS if no action is provided for a player who can act
+                        player_actions[p_idx] = "PASS"
+                    else:
+                        player_actions[p_idx] = action_str.split()
+
+                # Check for HU actions first
+                for j in range(1, 4):
+                    p_idx = (self.curPlayer + j) % 4
+                    action_parts = player_actions.get(p_idx, ["PASS"])
+                    if action_parts[0] == 'HU':
+                        self._checkMahjong(p_idx, isAboutKong=self.isAboutKong) # isAboutKong might be relevant if prev action was GANG
+                        action_processed = True
+                        break
+
+                if not action_processed:
+                    # Check for GANG/PENG actions
                     for j in range(1, 4):
-                        i = (self.curPlayer + j) % 4
-                        if responses[i] != 'PASS': raise Error(i)
-                    self._draw(self.curPlayer)
+                        p_idx = (self.curPlayer + j) % 4
+                        action_parts = player_actions.get(p_idx, ["PASS"])
+                        action_type = action_parts[0]
+
+                        if action_type == 'GANG':
+                            if self._canDrawTile(p_idx) and not self.wallLast:
+                                self._kong(p_idx, self.curTile) # curTile is the tile just played by self.curPlayer
+                                action_processed = True
+                                break
+                            # else: Cannot GANG (e.g. no tiles left for this player, or wall last)
+                        elif action_type == 'PENG':
+                            if not self.wallLast:
+                                self._pung(p_idx, self.curTile)
+                                action_processed = True
+                                break
+                            # else: Cannot PENG
+
+                if not action_processed:
+                    # Check for CHI action (only for the next player)
+                    next_player_idx = (self.curPlayer + 1) % 4
+                    action_parts = player_actions.get(next_player_idx, ["PASS"])
+                    action_type = action_parts[0]
+
+                    if action_type == 'CHI':
+                        if not self.wallLast:
+                            if len(action_parts) < 2:
+                                raise Error(f"Invalid CHI action for player {next_player_idx}: Missing tile for Chi")
+                            tile_for_chi = action_parts[1] # This is the middle tile of the Chi sequence
+                            self._chow(next_player_idx, tile_for_chi)
+                            action_processed = True
+                        # else: Cannot CHI (wall last)
+
+                if not action_processed:
+                    # All other players PASS or could not perform their desired action due to game rules
+                    # Check if all players (who could act) indeed passed or had invalid non-PASS actions handled by prior checks
+                    all_passed = True
+                    for j in range(1, 4):
+                        p_idx = (self.curPlayer + j) % 4
+                        action_parts = player_actions.get(p_idx, ["PASS"])
+                        if action_parts[0] != 'PASS':
+                            # This case should ideally be caught by more specific error handling if an action was invalid
+                            # but possible if e.g. a GANG was attempted on wallLast.
+                            # For now, treat as a pass if action couldn't be processed.
+                            pass
+
+                    if self.wallLast: # No one acted, and it's wall last
+                        self.obs = {}
+                        self.reward = [0, 0, 0, 0]
+                        self.done = True
+                    else: # No one acted, not wall last, next player draws
+                        self.curPlayer = (self.curPlayer + 1) % 4
+                        self._draw(self.curPlayer)
+                self.obs = {}
+
+            elif self.state == 3: # After BuGang, other players can Hu/Pass (Qiang Gang)
+                action_processed = False
+                for j in range(1, 4): # Iterate through other players
+                    p_idx = (self.curPlayer + j) % 4
+                    action_str = action_dict.get(p_idx)
+
+                    if not action_str: # Assume PASS if no action provided
+                        action_type = "PASS"
+                    else:
+                        action_parts = action_str.split()
+                        action_type = action_parts[0]
+
+                    if action_type == 'HU':
+                        # Qiang Gang Hu. self.curTile is the tile that was BuGanged.
+                        self._checkMahjong(p_idx, isAboutKong=True)
+                        action_processed = True
+                        break
+
+                if not action_processed:
+                    # All other players PASS
+                    # The current player (who BuGanged) draws a new tile
+                    self._draw(self.curPlayer) # drawAboutKong should be true from _promoteKong
+                self.obs = {}
+
         except Error as e:
-            player = e.args[0]
-            self.obs = {} # Placeholder: obs updated by game logic directly
-            self.reward = [10] * 4
-            self.reward[player] = -30
+            # Log the error message for debugging
+            error_msg = e.args[0]
+            print(f"MahjongGBEnv Error: {error_msg}") # It's good to print the actual error
+
+            # Determine player index from error message if it's a string like "Missing action for player X"
+            # This is a bit fragile; ideally Error would always store player index if relevant.
+            player_in_error = -1
+            if isinstance(error_msg, int): # Original way of Error(player_idx)
+                player_in_error = error_msg
+            else: # Try to parse from string
+                import re
+                match = re.search(r"player (\d+)", str(error_msg))
+                if match:
+                    player_in_error = int(match.group(1))
+
+            self.obs = {}
+            self.reward = [10] * 4 # Default penalty for all
+            if 0 <= player_in_error < 4:
+                 self.reward[player_in_error] = -30 # Specific penalty for the player causing error
+            else: # If player couldn't be identified, apply general penalty or handle as a system error
+                 # For now, stick to the original penalty logic if player is not identified.
+                 # Consider a more general penalty if player_in_error is -1.
+                 pass
             self.done = True
-        return self.obs, self.reward, self.done # Adjusted
+        return self.obs, self.reward, self.done
 
     def _drawTile(self, player):
         if self.duplicate:
@@ -186,6 +298,7 @@ class MahjongGBEnv():
         self.drawAboutKong = False
         self.state = 1
         self.curTile = tile
+        self.hands[player].append(tile) # Add drawn tile to hand
         for i in range(4):
             if i != player:
                 # self.agents[i].request2obs('Player %d Draw' % player) # Replaced

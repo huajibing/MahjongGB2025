@@ -159,18 +159,15 @@ class GameController:
                 return "PASS", None
 
         elif action_verb == "CHI":
-            if len(parts) == 3: # e.g. "CHI W1 W2" (Chi W1 with W2, need to discard one from hand)
-                self._log_error(f"Agent {player_id_acting} CHI response '{response_str}' needs 4 parts (CHI tile1 tile2 discard_tile). Assuming PASS.")
-                return "PASS", None
-            elif len(parts) == 4: # "CHI TILE_MIDDLE_OR_ACTIONED TILE_FROM_HAND_TO_DISCARD"
-                                 # e.g. "CHI W2 W4" -> Chi W1W2W3 (W2 is actioned), Discard W4
-                                 # Or "CHI W1 W2 W4" -> Chi W1W2W3, Discard W4
-                # Env step expects "CHI W1" (where W1 is the tile to form the sequence, e.g., W1 W2 W3)
-                # The discard is handled by the controller.
-                self._pending_discard_after_meld[player_id_acting] = parts[-1] # Last part is discard
-                return f"{action_verb} {' '.join(parts[1:-1])}", None # Action for env is "CHI TILE_ACTIONED [TILE2_IF_NEEDED]"
-            else: # Malformed
-                self._log_error(f"Agent {player_id_acting} malformed CHI: {response_str}. Assuming PASS.")
+            # Expected format: "CHI <Card1_middle_tile> <Card2_tile_to_discard>" (3 parts total)
+            if len(parts) == 3:
+                middle_tile = parts[1]
+                tile_to_discard = parts[2]
+                self._pending_discard_after_meld[player_id_acting] = tile_to_discard
+                # Environment's _chow method expects the middle tile of the sequence
+                return f"CHI {middle_tile}", None
+            else: # Malformed for CHI
+                self._log_error(f"Agent {player_id_acting} malformed CHI response: '{response_str}'. Expected 3 parts (CHI middle_tile discard_tile). Assuming PASS.")
                 return "PASS", None
 
         # For PLAY, HU, GANG, BUGANG, PASS - the response is the action itself
