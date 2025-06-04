@@ -145,17 +145,19 @@ class GameController:
         action_verb = parts[0].upper() # Normalize to uppercase
 
         if action_verb == "PENG":
-            if len(parts) == 2: # e.g., "PENG W1" (tile that was pung-ed) -> This is ambiguous for discard.
-                                # Assuming protocol means "PENG <tile_punged> <tile_to_discard_from_hand>"
-                self._log_error(f"Agent {player_id_acting} PENG response '{response_str}' needs 3 parts (PENG offered_tile discard_tile). Assuming PASS.")
-                return "PASS", None # Or handle as an error specific to game rules
-            elif len(parts) == 3: # "PENG TILE_OFFERED TILE_TO_DISCARD"
-                # Env step might expect just "PENG" or "PENG TILE_OFFERED"
-                # The discard is handled by the controller.
-                self._pending_discard_after_meld[player_id_acting] = parts[2]
-                return f"{action_verb} {parts[1]}", None # Action for env is "PENG TILE_OFFERED"
-            else: # Malformed
-                self._log_error(f"Agent {player_id_acting} malformed PENG: {response_str}. Assuming PASS.")
+            if len(parts) == 2: # Agent response: "PENG TILE_TO_DISCARD"
+                self._pending_discard_after_meld[player_id_acting] = parts[1] # Store TILE_TO_DISCARD
+                # The actual tile being PENGed is self.env.curTile (the tile played by the previous player).
+                # The game controller will use this when calling env.step().
+                # So, the action for env here is just "PENG".
+                # The env._pung() method expects the tile that was offered (self.env.curTile).
+                # The game_controller's main loop (play_game) needs to handle passing the correct tile to env.step.
+                # For _parse_agent_response, we return "PENG" as the primary action.
+                # The env.step in env.py for state 2, when it sees a "PENG" action from a player,
+                # should use self.curTile (which is the tile just played by the previous player) as the tile being PENGed.
+                return action_verb, None # Action for env is "PENG"
+            else: # Malformed PENG (not 2 parts)
+                self._log_error(f"Agent {player_id_acting} malformed PENG: '{response_str}'. Expected 2 parts (PENG TILE_TO_DISCARD). Assuming PASS.")
                 return "PASS", None
 
         elif action_verb == "CHI":
@@ -358,6 +360,42 @@ class GameController:
 
         return game_results
 
+def test_parse_agent_response(controller):
+    print("\n--- Running test_parse_agent_response ---")
+    # Test 1: Correct PENG
+    controller._pending_discard_after_meld.clear()
+    action, discard = controller._parse_agent_response("PENG W1", 0)
+    assert action == "PENG", f"Test 1 PENG Failed: action was {action}"
+    assert discard is None, f"Test 1 PENG Failed: discard was {discard}"
+    assert controller._pending_discard_after_meld.get(0) == "W1", f"Test 1 PENG Failed: pending was {controller._pending_discard_after_meld.get(0)}"
+    print("Test 1 (Correct PENG W1): Passed")
+
+    # Test 2: Malformed PENG (too many parts)
+    controller._pending_discard_after_meld.clear()
+    action, discard = controller._parse_agent_response("PENG W1 W2", 1)
+    assert action == "PASS", f"Test 2 Malformed PENG Failed: action was {action}"
+    assert discard is None, f"Test 2 Malformed PENG Failed: discard was {discard}"
+    assert 1 not in controller._pending_discard_after_meld, "Test 2 Malformed PENG Failed: pending should be empty for player 1"
+    print("Test 2 (Malformed PENG W1 W2): Passed")
+
+    # Test 3: Malformed PENG (too few parts)
+    controller._pending_discard_after_meld.clear()
+    action, discard = controller._parse_agent_response("PENG", 2)
+    assert action == "PASS", f"Test 3 Malformed PENG Failed: action was {action}"
+    assert discard is None, f"Test 3 Malformed PENG Failed: discard was {discard}"
+    assert 2 not in controller._pending_discard_after_meld, "Test 3 Malformed PENG Failed: pending should be empty for player 2"
+    print("Test 3 (Malformed PENG): Passed")
+
+    # Test 4: Correct CHI (ensure no interference)
+    controller._pending_discard_after_meld.clear()
+    action, discard = controller._parse_agent_response("CHI T1 T2", 0)
+    assert action == "CHI T1", f"Test 4 CHI Failed: action was {action}"
+    assert discard is None, f"Test 4 CHI Failed: discard was {discard}"
+    assert controller._pending_discard_after_meld.get(0) == "T2", f"Test 4 CHI Failed: pending was {controller._pending_discard_after_meld.get(0)}"
+    print("Test 4 (Correct CHI T1 T2): Passed")
+
+    print("--- test_parse_agent_response completed successfully ---")
+
 if __name__ == '__main__':
     print("Simplified Test for GameController...")
     # This test assumes dummy_agent_main.py is in evaluator/ as created by agent.py
@@ -390,10 +428,14 @@ if __name__ == '__main__':
 
     try:
         gc_instance = GameController(agent_main_paths=agent_paths, game_id="gc_main_test")
-        print(f"GameController initialized with agents: {agent_paths}. Starting play_game...")
+        # Run the specific unit test for _parse_agent_response
+        test_parse_agent_response(gc_instance)
+        print(f"\nGameController initialized with agents: {agent_paths}. Proceeding to play_game...")
+
+        # Proceed with the existing game simulation
         test_run_results = gc_instance.play_game()
 
-        print("\n--- GameController Test Run Results ---")
+        print("\n--- GameController Full Game Simulation Results ---")
         for key, value in test_run_results.items():
             if key != "log": # Don't print the full log to console here
                 print(f"  {key}: {value}")
