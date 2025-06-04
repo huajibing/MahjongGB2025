@@ -76,7 +76,7 @@ class MahjongGBEnv():
             if self.state == 0:
                 # After Chi/Peng, prepare to Play
                 response = "PLAY W1".split() # Placeholder action for curPlayer
-                if response[0] == 'Play':
+                if response[0] == 'PLAY':
                     self._discard(self.curPlayer, response[1])
                 else:
                     raise Error(self.curPlayer)
@@ -84,15 +84,15 @@ class MahjongGBEnv():
             elif self.state == 1:
                 # After Draw, prepare to Hu/Play/Gang/BuGang
                 response = "PLAY W1".split() # Placeholder action for curPlayer
-                if response[0] == 'Hu':
+                if response[0] == 'HU':
                     self.shownTiles[self.curTile] += 1
                     self._checkMahjong(self.curPlayer, isSelfDrawn = True, isAboutKong = self.isAboutKong)
-                elif response[0] == 'Play':
+                elif response[0] == 'PLAY':
                     self.hands[self.curPlayer].append(self.curTile)
                     self._discard(self.curPlayer, response[1])
-                elif response[0] == 'Gang' and not self.myWallLast and not self.wallLast:
+                elif response[0] == 'GANG' and not self.myWallLast and not self.wallLast:
                     self._concealedKong(self.curPlayer, response[1])
-                elif response[0] == 'BuGang' and not self.myWallLast and not self.wallLast:
+                elif response[0] == 'BUGANG' and not self.myWallLast and not self.wallLast:
                     self._promoteKong(self.curPlayer, response[1])
                 else:
                     raise Error(self.curPlayer)
@@ -103,26 +103,26 @@ class MahjongGBEnv():
                 # Priority: Hu > Peng/Gang > Chi
                 for j in range(1, 4):
                     i = (self.curPlayer + j) % 4
-                    if t[i][0] == 'Hu':
+                    if t[i][0] == 'HU':
                         self._checkMahjong(i)
                         break
                 else:
                     for j in range(1, 4):
                         i = (self.curPlayer + j) % 4
-                        if t[i][0] == 'Gang' and self._canDrawTile(i) and not self.wallLast:
+                        if t[i][0] == 'GANG' and self._canDrawTile(i) and not self.wallLast:
                             self._kong(i, self.curTile)
                             break
-                        elif t[i][0] == 'Peng' and not self.wallLast:
+                        elif t[i][0] == 'PENG' and not self.wallLast:
                             self._pung(i, self.curTile)
                             break
                     else:
                         i = (self.curPlayer + 1) % 4
-                        if t[i][0] == 'Chi' and not self.wallLast:
+                        if t[i][0] == 'CHI' and not self.wallLast:
                             self._chow(i, t[i][1])
                         else:
                             for j in range(1, 4):
                                 i = (self.curPlayer + j) % 4
-                                if t[i][0] != 'Pass': raise Error(i)
+                                if t[i][0] != 'PASS': raise Error(i)
                             if self.wallLast:
                                 # A draw
                                 self.obs = {} # Placeholder: obs updated by game logic directly
@@ -137,13 +137,13 @@ class MahjongGBEnv():
                 responses = {i : "PASS" for i in range(4) if i != self.curPlayer} # Placeholder actions for others
                 for j in range(1, 4):
                     i = (self.curPlayer + j) % 4
-                    if responses[i] == 'Hu':
+                    if responses[i] == 'HU':
                         self._checkMahjong(i, isAboutKong = True)
                         break
                 else:
                     for j in range(1, 4):
                         i = (self.curPlayer + j) % 4
-                        if responses[i] != 'Pass': raise Error(i)
+                        if responses[i] != 'PASS': raise Error(i)
                     self._draw(self.curPlayer)
         except Error as e:
             player = e.args[0]
@@ -193,7 +193,9 @@ class MahjongGBEnv():
         self.obs = {} # Placeholder: obs updated by game logic directly
 
     def _discard(self, player, tile):
-        if tile not in self.hands[player]: raise Error(player)
+        if tile not in self.hands[player]: 
+            print(f"Error: Player {player} does not have tile {tile} in hand.")
+            raise Error(player)
         self.hands[player].remove(tile)
         self.shownTiles[tile] += 1
         self.wallLast = not self._canDrawTile((player + 1) % 4)
@@ -204,7 +206,9 @@ class MahjongGBEnv():
 
     def _kong(self, player, tile):
         self.hands[player].append(self.curTile)
-        if self.hands[player].count(tile) < 4: raise Error(player)
+        if self.hands[player].count(tile) < 4: 
+            print(f"Error: Player {player} does not have enough tiles {tile} for a Kong.")
+            raise Error(player)
         for i in range(4): self.hands[player].remove(tile)
         # offer: 0 for self, 123 for up/oppo/down
         self.packs[player].append(('GANG', tile, (player + 4 - self.curPlayer) % 4))
@@ -217,7 +221,9 @@ class MahjongGBEnv():
 
     def _pung(self, player, tile):
         self.hands[player].append(self.curTile)
-        if self.hands[player].count(tile) < 3: raise Error(player)
+        if self.hands[player].count(tile) < 3: 
+            print(f"Error: Player {player} does not have enough tiles {tile} for a Pung.")
+            raise Error(player)
         for i in range(3): self.hands[player].remove(tile)
         # offer: 0 for self, 123 for up/oppo/down
         self.packs[player].append(('PENG', tile, (player + 4 - self.curPlayer) % 4))
@@ -237,7 +243,9 @@ class MahjongGBEnv():
         num = int(tile[1])
         for i in range(-1, 2):
             t = color + str(num + i)
-            if t not in self.hands[player]: raise Error(player)
+            if t not in self.hands[player]: 
+                print(f"Error: Player {player} does not have tile {t} in hand.")
+                raise Error(player)
             self.hands[player].remove(t)
             self.shownTiles[t] += 1
         # offer: 123 for which tile is offered
@@ -252,7 +260,9 @@ class MahjongGBEnv():
 
     def _concealedKong(self, player, tile):
         self.hands[player].append(self.curTile)
-        if self.hands[player].count(tile) < 4: raise Error(player)
+        if self.hands[player].count(tile) < 4: 
+            print(f"Error: Player {player} does not have enough tiles {tile} for a Kong.")
+            raise Error(player)
         for i in range(4): self.hands[player].remove(tile)
         # offer: 0 for self, 123 for up/oppo/down
         self.packs[player].append(('GANG', tile, (player + 4 - self.curPlayer) % 4))
@@ -273,7 +283,9 @@ class MahjongGBEnv():
         for i in range(len(self.packs[player])):
             if self.packs[player][i][0] == 'PENG' and self.packs[player][i][1] == tile:
                 idx = i
-        if idx < 0: raise Error(player)
+        if idx < 0: 
+            print(f"Error: Player {player} does not have a PENG {tile} to promote.")
+            raise Error(player)
         self.hands[player].remove(tile)
         offer = self.packs[player][idx][2]
         self.packs[player][idx] = ('GANG', tile, offer)
@@ -304,7 +316,9 @@ class MahjongGBEnv():
             fanCnt = 0
             for fanPoint, cnt, fanName, fanNameEn in fans:
                 fanCnt += fanPoint * cnt
-            if fanCnt < 8: raise Error('Not Enough Fans')
+            if fanCnt < 8: 
+                print(f"Error: Not Enough Fans")
+                raise Error('Not Enough Fans')
             self.obs = {} # Placeholder: obs updated by game logic directly
             if isSelfDrawn:
                 self.reward = [-(8 + fanCnt)] * 4
