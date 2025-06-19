@@ -160,11 +160,13 @@ def run_game():
                 print(f"Player {current_player_index} hand after KONG replacement (before decision): {current_player.hand}", flush=True)
 
                 # Agent needs to act on this new tile (e.g., PLAY, another GANG, HU)
+                print(f"SIM_DEBUG: P{current_player_index} hand before agent decision (after KONG replacement draw {action_context_tile}): {current_player.hand}", flush=True) # ADD THIS
                 request_str = f"2 {action_context_tile}" # Same as normal draw for agent's perspective
                 # print(f"Player {current_player_index} hand: {current_player.hand}") # DEBUG
-                # print(f"Player {current_player_index} request: {request_str}") # DEBUG
+                print(f"SIM_DEBUG: P{current_player_index} sending KONG replacement request: '{request_str}'", flush=True) # ADD THIS
                 current_agent.send_request(request_str)
                 response_from_agent = current_agent.receive_response()
+                print(f"SIM_DEBUG: P{current_player_index} agent KONG replacement response: '{response_from_agent}'", flush=True) # ADD THIS
                 # print(f"Player {current_player_index} response: {response_from_agent}") # DEBUG
                 print(f"Player {current_player_index} KONG replacement draw req: '{request_str}', Agent response: '{response_from_agent}'", flush=True)
 
@@ -319,10 +321,12 @@ def run_game():
                             acting_player.hand.sort()
                             print(f"  P{acting_player_idx} hand after PENG: {acting_player.hand}, Melds: {acting_player.melds}", flush=True)
 
+                            print(f"SIM_DEBUG: P{acting_player_idx} hand before PENG discard decision ('{tile_to_play_after_peng}'): {acting_player.hand}", flush=True) # ADD THIS
                             if tile_to_play_after_peng not in acting_player.hand:
                                 gs.end_game(error_message=f"P{acting_player_idx} PENG invalid discard {tile_to_play_after_peng}. Hand: {acting_player.hand}")
                                 processed_player_action_on_discard = True # Game ends
                             else:
+                                print(f"SIM_DEBUG: P{acting_player_idx} PENG discard is valid.", flush=True) # ADD THIS
                                 acting_player.hand.remove(tile_to_play_after_peng)
                                 acting_player.hand.sort()
                                 acting_player.discarded_tiles.append(tile_to_play_after_peng)
@@ -343,6 +347,15 @@ def run_game():
                                 gs.current_action_responses = new_responses
                                 gs.about_to_BUGANG_tile = None
                                 processed_player_action_on_discard = True
+
+                                # Notify the acting agent (self) about its own PENG and PLAY
+                                acting_agent_for_peng = gs.players[acting_player_idx].agent
+                                print(f"Sim: Notifying P{acting_player_idx} (self) of PENG and PLAY: '{peng_broadcast_msg}'", flush=True)
+                                acting_agent_for_peng.send_request(peng_broadcast_msg)
+                                self_response_peng = acting_agent_for_peng.receive_response()
+                                print(f"Sim: P{acting_player_idx} (self) response to PENG-PLAY notification: '{self_response_peng}'", flush=True)
+                                if self_response_peng.upper() != "PASS":
+                                    print(f"WARNING: P{acting_player_idx} (self) did not PASS after PENG-PLAY notification. Got: {self_response_peng}", flush=True)
 
                         else: # No PENG, check CHI
                             chi_action = next((act for act in potential_actions if act['type'] == 'CHI'), None)
@@ -369,10 +382,12 @@ def run_game():
                                 acting_player.hand.sort()
                                 print(f"  P{acting_player_idx} hand after CHI: {acting_player.hand}, Melds: {acting_player.melds}", flush=True)
 
+                                print(f"SIM_DEBUG: P{acting_player_idx} hand before CHI discard decision ('{tile_to_play_after_chi}'): {acting_player.hand}", flush=True) # ADD THIS
                                 if tile_to_play_after_chi not in acting_player.hand:
                                     gs.end_game(error_message=f"P{acting_player_idx} CHI invalid discard {tile_to_play_after_chi}. Hand: {acting_player.hand}")
                                     processed_player_action_on_discard = True # Game ends
                                 else:
+                                    print(f"SIM_DEBUG: P{acting_player_idx} CHI discard is valid.", flush=True) # ADD THIS
                                     acting_player.hand.remove(tile_to_play_after_chi)
                                     acting_player.hand.sort()
                                     acting_player.discarded_tiles.append(tile_to_play_after_chi)
@@ -394,6 +409,15 @@ def run_game():
                                     gs.about_to_BUGANG_tile = None
                                     processed_player_action_on_discard = True
 
+                                # Notify the acting agent (self) about its own CHI and PLAY
+                                acting_agent_for_chi = gs.players[acting_player_idx].agent
+                                print(f"Sim: Notifying P{acting_player_idx} (self) of CHI and PLAY: '{chi_broadcast_msg}'", flush=True)
+                                acting_agent_for_chi.send_request(chi_broadcast_msg)
+                                self_response_chi = acting_agent_for_chi.receive_response()
+                                print(f"Sim: P{acting_player_idx} (self) response to CHI-PLAY notification: '{self_response_chi}'", flush=True)
+                                if self_response_chi.upper() != "PASS":
+                                    print(f"WARNING: P{acting_player_idx} (self) did not PASS after CHI-PLAY notification. Got: {self_response_chi}", flush=True)
+
                 if not processed_player_action_on_discard and not gs.game_over: # No HU, KONG, PENG, or CHI was processed
                     print(f"  All other players PASS on discarded tile {gs.last_discarded_tile} from P{gs.last_discarding_player_index}.", flush=True)
                     gs.current_player_index = (gs.last_discarding_player_index + 1) % 4
@@ -404,6 +428,31 @@ def run_game():
                     gs.about_to_BUGANG_tile = None
                     continue # Important: proceed to next player's normal turn
                 # --- End of enhanced gs.just_discarded logic ---
+
+                # After processing potential actions on a discard:
+                if gs.game_over: # If HU occurred and game ended
+                    break
+
+                # If KONG action was taken, it would have 'continue'd already to handle kong replacement.
+                # If PENG or CHI action was taken, processed_player_action_on_discard is True.
+                # The current player is now the one who PENG/CHId, and they have just discarded.
+                # gs.just_discarded is True again. We should 'continue' to re-evaluate this new discard.
+                if processed_player_action_on_discard: # This covers PENG and CHI fall-through
+                    continue
+
+                # If no action was taken by any player (all passed on the original discard)
+                # This was the original 'if not processed_player_action_on_discard and not gs.game_over:'
+                # (gs.game_over already checked above)
+                if not processed_player_action_on_discard: # Should always be true if we reach here due to KONG/HU/PENG/CHI logic structure
+                    # This implies everyone passed on the discard from gs.last_discarding_player_index
+                    print(f"  All other players PASS on discarded tile {gs.last_discarded_tile} from P{gs.last_discarding_player_index} (final check).", flush=True)
+                    gs.current_player_index = (gs.last_discarding_player_index + 1) % 4
+                    gs.just_discarded = False
+                    gs.last_discarded_tile = None
+                    gs.last_discarding_player_index = None
+                    gs.current_action_responses.clear()
+                    gs.about_to_BUGANG_tile = None
+                    continue # Proceed to next player's normal turn
 
             else: # Normal player turn: Draw a tile
                 gs.turn_number += 1
@@ -421,11 +470,13 @@ def run_game():
                 current_player.hand.sort()
                 print(f"Player {current_player_index} hand after normal draw (before decision): {current_player.hand}", flush=True)
 
+                print(f"SIM_DEBUG: P{current_player_index} hand before agent decision (after draw {action_context_tile}): {current_player.hand}", flush=True) # ADD THIS
                 request_str = f"2 {action_context_tile}"
                 # print(f"Player {current_player_index} hand: {current_player.hand}") # DEBUG
-                # print(f"Player {current_player_index} request: {request_str}") # DEBUG
+                print(f"SIM_DEBUG: P{current_player_index} sending draw request: '{request_str}'", flush=True) # ADD THIS
                 current_agent.send_request(request_str)
                 response_from_agent = current_agent.receive_response()
+                print(f"SIM_DEBUG: P{current_player_index} agent draw response: '{response_from_agent}'", flush=True) # ADD THIS
                 # print(f"Player {current_player_index} response: {response_from_agent}") # DEBUG
                 print(f"Player {current_player_index} normal draw req: '{request_str}', Agent response: '{response_from_agent}'", flush=True)
 
@@ -435,10 +486,13 @@ def run_game():
             if gs.game_over: # Game might have ended due to wall empty
                 break
 
+            # NEW DETAILED DEBUG FOR response_from_agent
+            print(f"DEBUG: P{current_player_index} - In COMMON RESPONSE PROCESSING BLOCK.", flush=True)
+            print(f"DEBUG: P{current_player_index} - response_from_agent = '{response_from_agent}' (type: {type(response_from_agent)})", flush=True)
             if response_from_agent is None:
                 # This should not happen if the logic for KONG/DISCARD/NORMAL states is correct and leads to a response
                 err_msg = f"P{current_player_index} missing agent response unexpectedly (not a discard evaluation cycle)."
-                print(f"CRITICAL LOGIC ERROR: {err_msg}", flush=True)
+                print(f"CRITICAL LOGIC ERROR: {err_msg}. response_from_agent was None.", flush=True) # Added detail
                 gs.end_game(error_message=err_msg)
                 break
 

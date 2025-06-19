@@ -25,56 +25,108 @@ class Agent:
         # print(f"Agent {self.agent_id} sending request: {request_str}") # DEBUG
         if self.process.stdin: self.process.stdin.write(request_str + "\n"); self.process.stdin.flush()
     def receive_response(self) -> str:
+        print(f"Sim: Agent {self.agent_id} ENTERING receive_response", flush=True) # NEW
         if not self.process.stdout:
+            print(f"Sim: Agent {self.agent_id} stdout is None, cannot receive response.", flush=True)
+            print(f"Sim: Agent {self.agent_id} EXITING receive_response with \"\" (type: {type('')})", flush=True) # MODIFIED
             return ""
 
-        while True: # Loop to skip AGENT debug lines
-            line_read = self.process.stdout.readline().strip()
+        print(f"Sim: Agent {self.agent_id} waiting for response...", flush=True)
+        actual_response = "" # Initialize actual_response
+        log_buffer = [] # Buffer for initial lines
 
-            if line_read.startswith("AGENT"): # AGENT logs from agent's stderr
+        while True:
+            line_read = self.process.stdout.readline().strip()
+            print(f"Sim: Agent {self.agent_id} raw read: '{line_read}'", flush=True)
+            log_buffer.append(line_read) # Keep a log of raw lines
+
+            if not line_read: # Handle immediate EOF
+                print(f"Sim: Agent {self.agent_id} stdout.readline() returned empty. Possible EOF or agent crash.", flush=True)
+                # Try to use the last non-empty line read as actual_response if any
+                # Iterate backwards through log_buffer to find the last meaningful line
+                # Start from len(log_buffer) - 2 because the last one (len(log_buffer) - 1) is the current empty line_read.
+                for i in range(len(log_buffer) - 2, -1, -1):
+                    if log_buffer[i] and not log_buffer[i].startswith("AGENT"):
+                        actual_response = log_buffer[i]
+                        print(f"Sim: Agent {self.agent_id} using last non-empty, non-debug line as response: '{actual_response}' due to EOF.", flush=True)
+                        break
+                # If loop completes without break, actual_response remains "" (e.g. if only AGENT lines or all empty lines were read prior to EOF)
+                break # Exit while loop, as readline returned empty
+
+            if line_read.startswith("AGENT"):
                 print(f"A{self.agent_id} DEBUG: {line_read}", flush=True) # Print AGENT debug line to simulator's console
+                # actual_response remains unchanged from a previous non-AGENT line, or empty.
+                # We are skipping this debug line for the 'final' response determination for THIS iteration.
                 continue # Read next line
 
-            # If the line is not an AGENT debug line, it's the actual response or an error.
+            # If the line is not an AGENT debug line, it's a potential actual response or an error.
             actual_response = line_read
             # print(f"Agent {self.agent_id} received response: {actual_response}") # DEBUG - This is the raw response from agent's stdout
 
             # Check if this looks like an error message or if it's an empty line (agent might have crashed)
             # This primarily checks for Python tracebacks or common error keywords from the agent's main response stream.
-            if not actual_response or "Traceback" in actual_response or "Error" in actual_response or "Exception" in actual_response:
+            # Note: "not actual_response" was part of the original condition, but an empty line_read is now handled by the EOF check above.
+            # So, if actual_response is empty here, it means it was set by a previous (non-AGENT) line that was empty, which is unlikely to be an error marker itself.
+            # The primary check here is for error keywords.
+            if "Traceback" in actual_response or "Error" in actual_response or "Exception" in actual_response:
+                print(f"Sim: Agent {self.agent_id} detected error markers in response: '{actual_response}'. Collecting details.", flush=True)
                 # Potentially an error or crash, try to read more for diagnostics
-                error_output = [actual_response]
+                error_output = [actual_response] # Start with the line that has error markers
                 try:
                     for _ in range(10): # Read up to 10 more lines for the error
                         if self.process.stdout.closed:
+                            print(f"Sim: Agent {self.agent_id} stdout closed while collecting error context.", flush=True)
                             break
                         next_line = self.process.stdout.readline().strip()
+                        print(f"Sim: Agent {self.agent_id} raw read (error context): '{next_line}'", flush=True) # Log this attempt too
                         if next_line:
                             if next_line.startswith("AGENT"): # Also print AGENT lines found during error gathering
                                 print(f"A{self.agent_id} DEBUG: {next_line}", flush=True)
                                 error_output.append(next_line) # Add to error_output to show context
                             else:
                                 error_output.append(next_line)
-                        elif not actual_response:
+                        # If actual_response (the first error line) had content, an empty next_line means end of specific error output.
+                        # If actual_response was empty AND next_line is empty, also break (though covered by EOF above mostly)
+                        elif not actual_response and not next_line:
                             break
-                        else:
+                        elif actual_response and not next_line: # If first error line had content, but this next_line is empty, stop.
                             break
+                        # If next_line is empty and actual_response was also empty (unlikely here due to EOF check), break
+                        # elif not next_line:
+                        #     break
 
-                    if any(line for line in error_output if line):
-                        print(f"--- Agent {self.agent_id} Diagnostic Output ---", flush=True)
+
+                    if any(line for line in error_output if line): # Only print if there's something to print
+                        print(f"--- Agent {self.agent_id} Diagnostic Output (from error markers) ---", flush=True)
                         for err_line in error_output:
                             # Avoid double printing "AGENT DEBUG:" lines if already handled above for individual AGENT lines
-                            if not err_line.startswith("AGENT DEBUG:"): # This check might be redundant if already prefixed
+                            if not err_line.startswith(f"A{self.agent_id} DEBUG:") and not err_line.startswith("AGENT"): # Check both forms
                                 print(f"A{self.agent_id} CAPTURED: {err_line}", flush=True)
+                            elif err_line.startswith("AGENT") and not err_line.startswith(f"A{self.agent_id} DEBUG:"): # Original AGENT line
+                                print(f"A{self.agent_id} CAPTURED: {err_line}", flush=True)
+
                         print(f"--- End Agent {self.agent_id} Diagnostic ---", flush=True)
 
-                    return actual_response # Return the first line of the error or the empty line
+                    # actual_response already holds the first line that contained the error string.
+                    # This is what will be returned.
+                    break # Exit while loop, error has been processed.
 
                 except Exception as e:
-                    print(f"Error while trying to read extended output from agent {self.agent_id}: {e}", flush=True)
-                    return actual_response # Return what we got before this specific error
+                    print(f"Sim: Error while trying to read extended output from agent {self.agent_id} (error context): {e}", flush=True)
+                    # actual_response still holds the line that initiated error checking.
+                    break # Exit while loop
 
-            return actual_response # Normal response
+            # If it's not an AGENT line, and not an error-marled line, then it's a normal response.
+            break # Exit while loop, actual_response holds the good response.
+
+        # Final logging for what is being returned.
+        if not actual_response:
+            print(f"Sim: Agent {self.agent_id} receive_response is returning empty. Full log buffer for this attempt: {log_buffer}", flush=True)
+        else:
+            print(f"Sim: Agent {self.agent_id} receive_response determined actual response: '{actual_response}'", flush=True)
+
+        print(f"Sim: Agent {self.agent_id} EXITING receive_response with '{actual_response}' (type: {type(actual_response)})", flush=True) # NEW
+        return actual_response
 
     def close(self):
         if self.process:
