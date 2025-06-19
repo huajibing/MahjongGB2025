@@ -15,7 +15,7 @@ for i in range(1, 4): ALL_TILES.extend([f"{JIAN}{i}"] * 4) # Dragons R G Wh
 class Agent:
     def __init__(self, agent_id: int):
         self.agent_id = agent_id
-        agent_command = ["python", "agent_trainer/__main__.py"]
+        agent_command = ["python", "base_bot/__main__.py"]
         cwd = os.path.dirname(os.path.abspath(__file__))
         self.process = subprocess.Popen(
             agent_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, # Merge stderr to stdout
