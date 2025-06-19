@@ -1,0 +1,9 @@
+README.md
+mahjong.cpp
+setup.py
+../ChineseOfficialMahjongHelper/Classes/mahjong-algorithm/fan_calculator.cpp
+../ChineseOfficialMahjongHelper/Classes/mahjong-algorithm/shanten.cpp
+MahjongGB.egg-info/PKG-INFO
+MahjongGB.egg-info/SOURCES.txt
+MahjongGB.egg-info/dependency_links.txt
+MahjongGB.egg-info/top_level.txt

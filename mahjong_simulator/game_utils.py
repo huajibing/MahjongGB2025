@@ -22,53 +22,59 @@ class Agent:
             universal_newlines=True, bufsize=1, cwd=cwd
         )
     def send_request(self, request_str: str):
+        # print(f"Agent {self.agent_id} sending request: {request_str}") # DEBUG
         if self.process.stdin: self.process.stdin.write(request_str + "\n"); self.process.stdin.flush()
     def receive_response(self) -> str:
         if not self.process.stdout:
             return ""
 
-        first_line = self.process.stdout.readline().strip()
+        while True: # Loop to skip AGENT debug lines
+            line_read = self.process.stdout.readline().strip()
 
-        # Check if this looks like an error message or if it's an empty line (agent might have crashed)
-        # Typical agent responses are "PASS", "PLAY ...", "HU", etc.
-        # Tracebacks often start with "Traceback..."
-        if not first_line or "Traceback" in first_line or "Error" in first_line or "Exception" in first_line:
-            # Potentially an error or crash, try to read more for diagnostics
-            error_output = [first_line]
-            try:
-                # Try to read a few more lines, but don't block indefinitely
-                for _ in range(10): # Read up to 10 more lines for the error
-                    # Check if stdout is still open and if there's data
-                    # This is tricky without select.poll on the file descriptor.
-                    # A simple readline might block if nothing more is available.
-                    # However, if the process crashed, readline might return empty immediately.
-                    if self.process.stdout.closed:
-                        break
-                    # A very short timeout mechanism is hard to implement here directly with readline.
-                    # We rely on the agent process flushing its output upon crash or normal error reporting.
-                    next_line = self.process.stdout.readline().strip()
-                    if next_line:
-                        error_output.append(next_line)
-                    elif not first_line: # If first_line was also empty, likely no output / process died quietly
-                        break
-                    else: # Got some error lines, then an empty one, probably end of error.
-                        break
+            if line_read.startswith("AGENT"): # AGENT logs from agent's stderr
+                print(f"A{self.agent_id} DEBUG: {line_read}", flush=True) # Print AGENT debug line to simulator's console
+                continue # Read next line
 
-                # For debugging, print the collected error output to the main simulator's console
-                if any(line for line in error_output if line): # If any non-empty line was captured
-                    print(f"--- Agent {self.agent_id} Diagnostic Output ---", flush=True)
-                    for err_line in error_output:
-                        print(f"A{self.agent_id} CAPTURED: {err_line}", flush=True)
-                    print(f"--- End Agent {self.agent_id} Diagnostic ---", flush=True)
+            # If the line is not an AGENT debug line, it's the actual response or an error.
+            actual_response = line_read
+            # print(f"Agent {self.agent_id} received response: {actual_response}") # DEBUG - This is the raw response from agent's stdout
 
-                # Return the first line, as that's what the game logic currently expects for response check
-                return first_line
+            # Check if this looks like an error message or if it's an empty line (agent might have crashed)
+            # This primarily checks for Python tracebacks or common error keywords from the agent's main response stream.
+            if not actual_response or "Traceback" in actual_response or "Error" in actual_response or "Exception" in actual_response:
+                # Potentially an error or crash, try to read more for diagnostics
+                error_output = [actual_response]
+                try:
+                    for _ in range(10): # Read up to 10 more lines for the error
+                        if self.process.stdout.closed:
+                            break
+                        next_line = self.process.stdout.readline().strip()
+                        if next_line:
+                            if next_line.startswith("AGENT"): # Also print AGENT lines found during error gathering
+                                print(f"A{self.agent_id} DEBUG: {next_line}", flush=True)
+                                error_output.append(next_line) # Add to error_output to show context
+                            else:
+                                error_output.append(next_line)
+                        elif not actual_response:
+                            break
+                        else:
+                            break
 
-            except Exception as e:
-                print(f"Error while trying to read extended output from agent {self.agent_id}: {e}", flush=True)
-                return first_line # Return what we got
+                    if any(line for line in error_output if line):
+                        print(f"--- Agent {self.agent_id} Diagnostic Output ---", flush=True)
+                        for err_line in error_output:
+                            # Avoid double printing "AGENT DEBUG:" lines if already handled above for individual AGENT lines
+                            if not err_line.startswith("AGENT DEBUG:"): # This check might be redundant if already prefixed
+                                print(f"A{self.agent_id} CAPTURED: {err_line}", flush=True)
+                        print(f"--- End Agent {self.agent_id} Diagnostic ---", flush=True)
 
-        return first_line # Normal response
+                    return actual_response # Return the first line of the error or the empty line
+
+                except Exception as e:
+                    print(f"Error while trying to read extended output from agent {self.agent_id}: {e}", flush=True)
+                    return actual_response # Return what we got before this specific error
+
+            return actual_response # Normal response
 
     def close(self):
         if self.process:

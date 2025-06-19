@@ -1,6 +1,7 @@
 from agent import MahjongGBAgent
 from collections import defaultdict
 import numpy as np
+# import sys # No longer needed if all prints to sys.stderr are removed
 
 try:
     from MahjongGB import MahjongFanCalculator
@@ -77,6 +78,7 @@ class FeatureAgent(MahjongGBAgent):
     Player N(me) Chi XX
     '''
     def request2obs(self, request):
+        # print(f"AGENT {self.seatWind} request2obs: Received request: '{request}'", file=sys.stderr) # DEBUG
         t = request.split()
         if t[0] == 'Wind':
             self.prevalentWind = int(t[1])
@@ -85,6 +87,7 @@ class FeatureAgent(MahjongGBAgent):
         if t[0] == 'Deal':
             self.hand = t[1:]
             self._hand_embedding_update()
+            # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
             return
         if t[0] == 'Huang':
             self.valid = []
@@ -100,6 +103,7 @@ class FeatureAgent(MahjongGBAgent):
             self.isAboutKong = False
             self.hand.append(tile)
             self._hand_embedding_update()
+            # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
             for tile in set(self.hand):
                 self.valid.append(self.OFFSET_ACT['Play'] + self.OFFSET_TILE[tile])
                 if self.hand.count(tile) == 4 and not self.wallLast and self.tileWall[0] > 0:
@@ -129,6 +133,7 @@ class FeatureAgent(MahjongGBAgent):
             if p == 0:
                 self.hand.remove(self.curTile)
                 self._hand_embedding_update()
+                # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
                 return
             else:
                 # Available: Hu/Gang/Peng/Chi/Pass
@@ -169,6 +174,7 @@ class FeatureAgent(MahjongGBAgent):
                 for i in range(-1, 2):
                     self.hand.remove(color + str(num + i))
                 self._hand_embedding_update()
+                # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
                 for tile in set(self.hand):
                     self.valid.append(self.OFFSET_ACT['Play'] + self.OFFSET_TILE[tile])
                 return self._obs()
@@ -198,6 +204,7 @@ class FeatureAgent(MahjongGBAgent):
                 for i in range(2):
                     self.hand.remove(self.curTile)
                 self._hand_embedding_update()
+                # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
                 for tile in set(self.hand):
                     self.valid.append(self.OFFSET_ACT['Play'] + self.OFFSET_TILE[tile])
                 return self._obs()
@@ -218,6 +225,9 @@ class FeatureAgent(MahjongGBAgent):
                 for i in range(3):
                     self.hand.remove(self.curTile)
                 self._hand_embedding_update()
+                # For Ming GANG, hand might be empty if it was the last tile before making the Peng a Gang.
+                # Or it might have other tiles. Either way, log its state.
+                # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
                 self.isAboutKong = True
             return
         if t[2] == 'AnGang':
@@ -227,6 +237,8 @@ class FeatureAgent(MahjongGBAgent):
                 self.isAboutKong = True
                 for i in range(4):
                     self.hand.remove(tile)
+                self._hand_embedding_update() # Added this line
+                # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
             else:
                 self.isAboutKong = False
             return
@@ -240,6 +252,7 @@ class FeatureAgent(MahjongGBAgent):
             if p == 0:
                 self.hand.remove(tile)
                 self._hand_embedding_update()
+                # print(f"AGENT {self.seatWind} request2obs: Hand updated to: {sorted(list(self.hand))}", file=sys.stderr) # DEBUG
                 self.isAboutKong = True
                 return
             else:

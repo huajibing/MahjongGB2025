@@ -161,8 +161,11 @@ def run_game():
 
                 # Agent needs to act on this new tile (e.g., PLAY, another GANG, HU)
                 request_str = f"2 {action_context_tile}" # Same as normal draw for agent's perspective
+                # print(f"Player {current_player_index} hand: {current_player.hand}") # DEBUG
+                # print(f"Player {current_player_index} request: {request_str}") # DEBUG
                 current_agent.send_request(request_str)
                 response_from_agent = current_agent.receive_response()
+                # print(f"Player {current_player_index} response: {response_from_agent}") # DEBUG
                 print(f"Player {current_player_index} KONG replacement draw req: '{request_str}', Agent response: '{response_from_agent}'", flush=True)
 
             elif gs.just_discarded:
@@ -419,8 +422,11 @@ def run_game():
                 print(f"Player {current_player_index} hand after normal draw (before decision): {current_player.hand}", flush=True)
 
                 request_str = f"2 {action_context_tile}"
+                # print(f"Player {current_player_index} hand: {current_player.hand}") # DEBUG
+                # print(f"Player {current_player_index} request: {request_str}") # DEBUG
                 current_agent.send_request(request_str)
                 response_from_agent = current_agent.receive_response()
+                # print(f"Player {current_player_index} response: {response_from_agent}") # DEBUG
                 print(f"Player {current_player_index} normal draw req: '{request_str}', Agent response: '{response_from_agent}'", flush=True)
 
             # -------- COMMON RESPONSE PROCESSING BLOCK --------
@@ -461,6 +467,7 @@ def run_game():
                     break
                 tile_played = action_parts[1]
 
+                # print(f"Player {current_player_index} played {tile_played}, hand: {current_player.hand}") # DEBUG
                 if tile_played not in current_player.hand:
                     err_msg = f"P{current_player_index} tried to play {tile_played} which is NOT in hand {current_player.hand} (action tile was: {action_context_tile})."
                     print(f"CRITICAL ERROR: {err_msg}", flush=True)
@@ -488,6 +495,18 @@ def run_game():
                     response_broadcast = other_agent.receive_response()
                     gs.current_action_responses[p_idx] = response_broadcast
                     print(f"  P{p_idx} (Agent {other_agent.agent_id}) saw P{current_player_index} play {tile_played}. Agent response: '{response_broadcast}'", flush=True)
+
+                # Notify the acting agent about its own play so it can update its internal state
+                self_play_notification_req = f"3 {current_player_index} PLAY {tile_played}"
+                # print(f"Player {current_player_index} (acting agent) Sending self-notification of PLAY: '{self_play_notification_req}'", flush=True) # DEBUG
+                # The current_agent is already defined in this scope
+                current_agent.send_request(self_play_notification_req)
+                self_play_notification_resp = current_agent.receive_response()
+                # print(f"Player {current_player_index} (acting agent) Received response to self-notification: '{self_play_notification_resp}'", flush=True) # DEBUG
+                if self_play_notification_resp.upper() != "PASS":
+                    print(f"WARNING: Player {current_player_index} (acting agent) did not respond with PASS to self-play notification. Got: {self_play_notification_resp}", flush=True)
+                    # Decide if this should be a critical error or just a warning.
+                    # For now, a warning, as the agent's __main__.py should handle this by printing PASS.
                 # The next iteration of the main while loop will handle gs.just_discarded = True
 
             elif action_type == "GANG": # AnGang from drawn tile (normal or kong replacement)

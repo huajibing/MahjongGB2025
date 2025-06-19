@@ -7,14 +7,17 @@ from model import CNNModel
 # Botzone interaction
 import numpy as np
 import torch
+import sys # Keep for sys.stdout.flush()
 
 def obs2response(model, obs):
+    # print(f"AGENT {agent.seatWind} __main__.obs2response: Current hand from agent.hand: {sorted(list(agent.hand))}", file=sys.stderr) # DEBUG
+    # print(f"AGENT {agent.seatWind} __main__.obs2response: Action mask (non-zero indices from obs): {[i for i, x in enumerate(obs['action_mask']) if x == 1]}", file=sys.stderr) # DEBUG
     logits, value = model({'observation': torch.from_numpy(np.expand_dims(obs['observation'], 0)), 'action_mask': torch.from_numpy(np.expand_dims(obs['action_mask'], 0))})
     action = logits.detach().numpy().flatten().argmax()
+    # print(f"AGENT {agent.seatWind} __main__.obs2response: Chosen action index: {action}", file=sys.stderr) # DEBUG
     response = agent.action2response(action)
+    # print(f"AGENT {agent.seatWind} __main__.obs2response: Response string: '{response}'", file=sys.stderr) # DEBUG
     return response
-
-import sys
 
 if __name__ == '__main__':
     model = CNNModel()
