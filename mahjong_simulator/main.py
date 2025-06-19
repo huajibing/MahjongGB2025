@@ -125,10 +125,27 @@ def run_game():
                     # gs.game_over is now true, loop will terminate. No continue needed.
                 else:
                     # No QiangGangHu, BuGang is successful.
-                    print(f"No QiangGangHu. P{bugang_player_idx}'s BUGANG of {gs.about_to_BUGANG_tile} is successful.", flush=True)
+                    # bugang_player_idx and gs.about_to_BUGANG_tile are already defined in this scope.
+                    # gs.about_to_BUGANG_tile holds the tile that was BuGanged.
+                    success_bugang_tile = gs.about_to_BUGANG_tile # Store for clarity before gs.about_to_BUGANG_tile is cleared
+
+                    print(f"No QiangGangHu. P{bugang_player_idx}'s BUGANG of {success_bugang_tile} is successful.", flush=True)
+
+                    # --- Self-notify agent of successful BuGang before drawing replacement tile ---
+                    if success_bugang_tile: # Ensure tile is valid
+                        bugang_self_req_str = f"3 {bugang_player_idx} BUGANG {success_bugang_tile}"
+                        bugang_agent = gs.players[bugang_player_idx].agent
+                        print(f"Sim: Notifying P{bugang_player_idx} (Self) of successful BUGANG: '{bugang_self_req_str}'", flush=True)
+                        bugang_agent.send_request(bugang_self_req_str)
+                        resp_self_bugang = bugang_agent.receive_response()
+                        print(f"  P{bugang_player_idx} (Self) response to successful BUGANG notification of {success_bugang_tile}: '{resp_self_bugang}'", flush=True)
+                        if resp_self_bugang.upper() != "PASS":
+                            print(f"WARNING: P{bugang_player_idx} (Self) did not PASS after successful BUGANG self-notification. Got: {resp_self_bugang}", flush=True)
+                    # --- End Self-notification for BuGang ---
+
                     gs.current_player_index = bugang_player_idx # Ensure current player is still the BuGanger
                     gs.just_declared_kong = True # Proceed to draw replacement tile
-                    gs.about_to_BUGANG_tile = None # Clear after check
+                    gs.about_to_BUGANG_tile = None # Clear after check (success_bugang_tile still holds it for this scope if needed)
                     gs.last_discarding_player_index = None # Was for QGH context
                     gs.current_action_responses.clear()
                     # Loop will restart, and 'if gs.just_declared_kong:' will handle replacement draw.
@@ -582,6 +599,20 @@ def run_game():
                 current_player.hand.sort()
                 current_player.melds.append(('ANGANG', tile_kong, current_player_index))
                 print(f"Player {current_player_index} declares ANGANG with {tile_kong}. Hand: {current_player.hand}. Melds: {current_player.melds}", flush=True)
+
+                # --- Broadcast AnGang to all players (including self) ---
+                an_gang_req_str = f"3 {current_player_index} GANG {tile_kong}" # BotIO: GANG <tile> for AnGang
+                print(f"Sim: Broadcasting AnGang notification: '{an_gang_req_str}'", flush=True)
+                for notify_p_idx in range(4):
+                    notified_agent = gs.players[notify_p_idx].agent
+                    notified_agent.send_request(an_gang_req_str)
+                    resp = notified_agent.receive_response()
+                    print(f"  P{notify_p_idx} (Agent {notified_agent.agent_id}) response to AnGang broadcast from P{current_player_index} of {tile_kong}: '{resp}'", flush=True)
+                    if notify_p_idx == current_player_index and resp.upper() != "PASS":
+                        print(f"WARNING: P{current_player_index} (self) did not PASS after AnGang self-notification. Got: {resp}", flush=True)
+                    elif notify_p_idx != current_player_index and resp.upper() != "PASS":
+                         print(f"WARNING: P{notify_p_idx} did not PASS after AnGang notification for P{current_player_index}. Got: {resp}", flush=True)
+                # --- End AnGang Broadcast ---
 
                 gs.just_declared_kong = True # Player will draw replacement in next iteration
                 # current_player_index remains the same.

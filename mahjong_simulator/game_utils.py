@@ -227,18 +227,73 @@ class GameState:
                     if meld_type == "ANGANG": actual_calc_meld_type = "KONG"
                 calculator_packs.append((actual_calc_meld_type, tile1, offer_relative))
 
-            is_4th_tile = False
+            # Calculate is_4th_tile for MahjongFanCalculator
+            visible_winning_tile_count = 0
+            if winning_tile: # Ensure winning_tile is not None
+                for p_scan in self.players:
+                    # Check discarded tiles
+                    for discarded in p_scan.discarded_tiles:
+                        if discarded == winning_tile:
+                            visible_winning_tile_count += 1
+                    # Check melds
+                    for meld in p_scan.melds:
+                        meld_type = meld[0].upper()
+                        meld_main_tile = meld[1] # This is tile_str for PENG/GANG, middle_tile for CHI
+
+                        if meld_type == 'PENG':
+                            if meld_main_tile == winning_tile:
+                                visible_winning_tile_count += 3
+                        elif meld_type in ['GANG', 'ANGANG', 'BUGANG']:
+                            if meld_main_tile == winning_tile:
+                                visible_winning_tile_count += 4
+                        elif meld_type == 'CHI':
+                            # meld_main_tile is the middle tile, e.g., 'W2' for 'W1W2W3'
+                            # meld[2] is the full sequence string e.g. "W1W2W3"
+                            # For CHI, the meld_main_tile is like 'W2', 'T5', etc.
+                            suit = meld_main_tile[0]
+                            try:
+                                mid_num = int(meld_main_tile[1:])
+                                # Check if winning_tile is part of this CHI sequence
+                                # Construct the three tiles of the sequence
+                                # Only TIAO, TONG, WAN can form CHI
+                                if suit in [TIAO, TONG, WAN] and 1 < mid_num < 9:
+                                    seq_tiles = [f"{suit}{mid_num-1}", meld_main_tile, f"{suit}{mid_num+1}"]
+                                    for seq_t in seq_tiles:
+                                        if seq_t == winning_tile:
+                                            visible_winning_tile_count += 1
+                            except ValueError: # Should not happen with valid tile strings
+                                pass
+
+            is_4th_tile_for_calc = (visible_winning_tile_count == 3)
+            # Define is_about_kong_for_calc before it's used
             is_about_kong_for_calc = is_robbing_kong or (is_self_drawn and was_kong_replacement_draw)
+            hand_copy = list(winner.hand) # Make a mutable copy
+            if is_self_drawn:
+                if winning_tile in hand_copy: # winning_tile could be None if error
+                    hand_copy.remove(winning_tile)
+            # For discard wins, winner.hand should already not contain winning_tile.
+            # The PyMahjongGB library expects the hand NOT to include the winning tile.
+            hand_for_calculator = tuple(sorted(hand_copy))
 
             try:
                 fans_calculator = MahjongFanCalculator(
-                    pack=tuple(calculator_packs), hand=tuple(sorted(winner.hand)), winTile=winning_tile,
-                    flowerCount=0, isSelfDrawn=is_self_drawn, is4thTile=is_4th_tile,
+                    pack=tuple(calculator_packs), hand=hand_for_calculator, winTile=winning_tile,
+                    flowerCount=0, isSelfDrawn=is_self_drawn, is4thTile=is_4th_tile_for_calc,
                     isAboutKong=is_about_kong_for_calc, isWallLast=(len(self.tile_wall) == 0),
                     seatWind=winner.seat_wind, prevalentWind=self.prevalent_wind, verbose=False
                 )
                 fan_cnt_total = 0; self.win_details = []
-                for fp, cnt, f_zh, f_en in fans_calculator:
+                for fan_item in fans_calculator:
+                    if len(fan_item) == 4:
+                        fp, cnt, f_zh, f_en = fan_item
+                    elif len(fan_item) == 2:
+                        fp, cnt = fan_item
+                        f_zh = "Unknown Fan"
+                        f_en = "Unknown Fan"
+                    else:
+                        # Unexpected format, skip or log error
+                        print(f"WARNING: Unexpected fan item format from PyMahjongGB: {fan_item}", flush=True)
+                        continue
                     self.win_details.append((fp, cnt, f_zh, f_en)); fan_cnt_total += fp * cnt
 
                 if fan_cnt_total < 8:
