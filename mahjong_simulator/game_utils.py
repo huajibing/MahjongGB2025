@@ -285,11 +285,27 @@ class GameState:
                 fan_cnt_total = 0; self.win_details = []
                 for fan_item in fans_calculator:
                     if len(fan_item) == 4:
-                        fp, cnt, f_zh, f_en = fan_item
+                        fp_orig, cnt_orig, f_zh, f_en = fan_item
+                        fp = int(fp_orig)
+                        if isinstance(cnt_orig, str) and not cnt_orig.isdigit():
+                            cnt = 1 # Default to 1 if cnt_orig is a non-numeric string
+                            if f_en == "Unknown Fan": # Store the descriptive name if it was unknown
+                                f_en = cnt_orig
+                            if f_zh == "Unknown Fan": # Also check f_zh
+                                f_zh = cnt_orig
+                        else:
+                            cnt = int(cnt_orig)
                     elif len(fan_item) == 2:
-                        fp, cnt = fan_item
-                        f_zh = "Unknown Fan"
-                        f_en = "Unknown Fan"
+                        fp_orig, cnt_orig = fan_item
+                        fp = int(fp_orig)
+                        if isinstance(cnt_orig, str) and not cnt_orig.isdigit():
+                            cnt = 1 # Default to 1 if cnt_orig is a non-numeric string
+                            f_zh = cnt_orig # Store the descriptive name
+                            f_en = cnt_orig # Store the descriptive name
+                        else:
+                            cnt = int(cnt_orig)
+                            f_zh = "Unknown Fan"
+                            f_en = "Unknown Fan"
                     else:
                         # Unexpected format, skip or log error
                         print(f"WARNING: Unexpected fan item format from PyMahjongGB: {fan_item}", flush=True)
