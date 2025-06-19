@@ -1,30 +1,36 @@
 from game_utils import Agent, GameState
 import sys # For flushing stdout
-from typing import Optional # Ensure Optional is imported
+from typing import List, Tuple, Optional, Dict, Any # Ensure Optional is imported
 
-def run_game():
-    print("Starting game...")
-    agents = []
+def run_game(agent_paths: List[str]) -> Tuple[Optional[Dict[int, int]], Optional[int], Optional[str]]:
+    print(f"Starting game with agent paths: {agent_paths}", flush=True)
+    agents: List[Agent] = []
+    gs: Optional[GameState] = None
     try:
         # 1. Initialize four Agent objects
-        print("Initializing agents...")
+        print("Initializing agents...", flush=True)
+        if len(agent_paths) != 4:
+            error_msg = f"Error: Expected 4 agent paths, got {len(agent_paths)}"
+            print(error_msg, flush=True)
+            return None, None, error_msg
+
         for i in range(4):
-            agents.append(Agent(agent_id=i))
-        print("Agents initialized.")
+            agents.append(Agent(agent_id=i, agent_path=agent_paths[i]))
+        print(f"Agents initialized with paths: {agent_paths}", flush=True)
 
         # 2. Crucial: Send initial newline to each agent
-        print("Sending initial newline to agents...")
-        for i, agent_proc in enumerate(agents):
+        print("Sending initial newline to agents...", flush=True)
+        for i, agent_proc in enumerate(agents): # agent_proc is agents[i]
             # The agent_trainer/__main__.py has an input() call before its main loop.
             # Sending an empty string + newline via send_request.
-            agent_proc.send_request("")
-            print(f"Sent initial newline to agent {i}.")
-        print("Initial newlines sent.")
+            agent_proc.send_request("") # Send empty string, agent_trainer/__main__.py expects an initial input()
+            print(f"Sent initial newline to agent {i}.", flush=True)
+        print("Initial newlines sent.", flush=True)
 
         # 3. Create GameState instance
-        print("Creating GameState...")
-        gs = GameState(agents)
-        print("GameState created.")
+        print("Creating GameState...", flush=True)
+        gs = GameState(agents) # gs is created here
+        print("GameState created.", flush=True)
         print(f"Prevalent wind (Quan): {gs.prevalent_wind}")
         for i, player in enumerate(gs.players):
             print(f"Player {i} initial hand: {player.hand}")
@@ -721,27 +727,64 @@ def run_game():
         print("\nFinal Scores:", flush=True)
         for i in range(4):
             # Use final_scores if populated by end_game, otherwise current player scores (e.g. if error before scoring)
-            player_score = gs.final_scores.get(i, gs.players[i].score)
+            player_score = gs.final_scores.get(i, gs.players[i].score) if gs else "N/A" # handle gs might be None
             print(f"  Player {i}: {player_score} points", flush=True)
         # --- End of Game Over Information ---
 
+        if gs:
+            print("Returning scores, winner index and error message from GameState.", flush=True)
+            return gs.final_scores, gs.winner_index, gs.error_message
+        else:
+            print("Error: GameState was not available to return results.", flush=True)
+            return None, None, "Critical Error: GameState not initialized before game end."
+
     except Exception as e:
-        print(f"An error occurred during the game: {e}", flush=True)
-        # Print traceback for more details
+        print(f"An unhandled error occurred during the game: {e}", flush=True)
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stdout)
+        sys.stdout.flush()
+        error_detail = f"An unhandled error occurred: {str(e)}"
+        final_scores_on_error = None
+        winner_index_on_error = None
+        if gs: # Check if gs was initialized
+            final_scores_on_error = gs.final_scores
+            winner_index_on_error = gs.winner_index
+            if gs.error_message:
+                 error_detail += f". Previous game error: {gs.error_message}"
+        return final_scores_on_error, winner_index_on_error, error_detail
     finally:
         # 5. Agent Cleanup
         print("\nClosing agent processes...")
         sys.stdout.flush()
         for i, agent_proc in enumerate(agents):
             if agent_proc: # Check if agent was successfully created
-                print(f"Closing agent {i}...")
+                print(f"Closing agent {i} (Path: {agent_paths[i] if i < len(agent_paths) else 'N/A'})...", flush=True)
                 sys.stdout.flush()
                 agent_proc.close()
-                print(f"Agent {i} closed.")
+                print(f"Agent {i} closed.", flush=True) # Added flush=True
                 sys.stdout.flush()
-        print("All agent processes closed.")
+        print("All agent processes closed.", flush=True) # Added flush=True
 
 if __name__ == "__main__":
-    run_game()
+    default_test_paths = ["base_bot", "base_bot", "base_bot", "base_bot"]
+    # Example for testing with agent_trainer (assuming paths relative to mahjong_simulator/):
+    # default_test_paths = ["base_bot", "../agent_trainer", "base_bot", "../agent_trainer"]
+
+    print(f"Running a test game from __main__ with agent paths: {default_test_paths}", flush=True)
+
+    final_scores, winner_idx, error_msg = run_game(default_test_paths)
+
+    if error_msg:
+        print(f"Game finished with an error: {error_msg}", flush=True)
+
+    if winner_idx is not None:
+        print(f"Winner: Player {winner_idx}", flush=True)
+    elif not error_msg: # If no error and no winner, it's likely a draw
+        print("Game ended in a draw or without a clear winner.", flush=True)
+
+    if final_scores:
+        print("Final scores:", flush=True)
+        for player_id, score_val in final_scores.items():
+            print(f"  Player {player_id}: {score_val}", flush=True)
+    elif not error_msg:
+        print("Game finished, but no scores were returned (and no error message).", flush=True)

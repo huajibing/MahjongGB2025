@@ -13,13 +13,16 @@ for i in range(1, 5): ALL_TILES.extend([f"{FENG}{i}"] * 4) # Winds E S W N
 for i in range(1, 4): ALL_TILES.extend([f"{JIAN}{i}"] * 4) # Dragons R G Wh
 
 class Agent:
-    def __init__(self, agent_id: int):
+    def __init__(self, agent_id: int, agent_path: str):
         self.agent_id = agent_id
-        agent_command = ["python", "base_bot/__main__.py"]
-        cwd = os.path.dirname(os.path.abspath(__file__))
+        # agent_path is expected to be the directory containing the agent's __main__.py
+        # e.g., "agent_trainer" or "base_bot"
+        # Construct the command to execute __main__.py within agent_path
+        agent_command = ["python", "__main__.py"] # __main__.py is now relative to cwd
+        # The CWD should be the agent's own directory
         self.process = subprocess.Popen(
             agent_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, # Merge stderr to stdout
-            universal_newlines=True, bufsize=1, cwd=cwd
+            universal_newlines=True, bufsize=1, cwd=agent_path # Set cwd to agent_path
         )
     def send_request(self, request_str: str):
         # print(f"Agent {self.agent_id} sending request: {request_str}") # DEBUG

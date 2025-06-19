@@ -20,7 +20,8 @@ if __name__ == '__main__':
     # model = CNNModel()
     # model = MahjongModel()
     model = ResMahjongModel()
-    data_dir = './base_bot/model/model.pkl'
+    # data_dir should be relative to the CWD of this script, which is mahjong_simulator/base_bot/
+    data_dir = 'model/model.pkl'
     model.load_state_dict(torch.load(data_dir, map_location = torch.device('cpu'), weights_only = True))
     input() # 1
     while True:
