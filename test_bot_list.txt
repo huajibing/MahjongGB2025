@@ -1,0 +1,4 @@
+name=FileBot1,path=bots/base_bot
+name=FileBot2,path=bots/base_bot
+name=FileBot3,path=bots/base_bot
+name=FileBot4,path=bots/base_bot

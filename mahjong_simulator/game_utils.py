@@ -3,6 +3,7 @@ import os
 import random
 from typing import List, Tuple, Optional, Dict, Any
 from MahjongGB import MahjongFanCalculator
+from .logging_utils import logger
 
 # Tile Constants
 WAN = "W"; TONG = "B"; TIAO = "T"; FENG = "F"; JIAN = "J"
@@ -25,110 +26,82 @@ class Agent:
             universal_newlines=True, bufsize=1, cwd=agent_path # Set cwd to agent_path
         )
     def send_request(self, request_str: str):
-        # print(f"Agent {self.agent_id} sending request: {request_str}") # DEBUG
+        logger.debug(f"Sim: Agent {self.agent_id} sending request: {request_str}")
         if self.process.stdin: self.process.stdin.write(request_str + "\n"); self.process.stdin.flush()
+
     def receive_response(self) -> str:
-        print(f"Sim: Agent {self.agent_id} ENTERING receive_response", flush=True) # NEW
+        logger.debug(f"Sim: Agent {self.agent_id} ENTERING receive_response")
         if not self.process.stdout:
-            print(f"Sim: Agent {self.agent_id} stdout is None, cannot receive response.", flush=True)
-            print(f"Sim: Agent {self.agent_id} EXITING receive_response with \"\" (type: {type('')})", flush=True) # MODIFIED
+            logger.error(f"Sim: Agent {self.agent_id} stdout is None, cannot receive response.")
+            logger.debug(f"Sim: Agent {self.agent_id} EXITING receive_response with \"\" (type: {type('')})")
             return ""
 
-        print(f"Sim: Agent {self.agent_id} waiting for response...", flush=True)
+        logger.debug(f"Sim: Agent {self.agent_id} waiting for response...")
         actual_response = "" # Initialize actual_response
         log_buffer = [] # Buffer for initial lines
 
         while True:
             line_read = self.process.stdout.readline().strip()
-            print(f"Sim: Agent {self.agent_id} raw read: '{line_read}'", flush=True)
+            logger.debug(f"Sim: Agent {self.agent_id} raw read: '{line_read}'")
             log_buffer.append(line_read) # Keep a log of raw lines
 
             if not line_read: # Handle immediate EOF
-                print(f"Sim: Agent {self.agent_id} stdout.readline() returned empty. Possible EOF or agent crash.", flush=True)
+                logger.warning(f"Sim: Agent {self.agent_id} stdout.readline() returned empty. Possible EOF or agent crash.")
                 # Try to use the last non-empty line read as actual_response if any
-                # Iterate backwards through log_buffer to find the last meaningful line
-                # Start from len(log_buffer) - 2 because the last one (len(log_buffer) - 1) is the current empty line_read.
                 for i in range(len(log_buffer) - 2, -1, -1):
                     if log_buffer[i] and not log_buffer[i].startswith("AGENT"):
                         actual_response = log_buffer[i]
-                        print(f"Sim: Agent {self.agent_id} using last non-empty, non-debug line as response: '{actual_response}' due to EOF.", flush=True)
+                        logger.info(f"Sim: Agent {self.agent_id} using last non-empty, non-debug line as response: '{actual_response}' due to EOF.")
                         break
-                # If loop completes without break, actual_response remains "" (e.g. if only AGENT lines or all empty lines were read prior to EOF)
                 break # Exit while loop, as readline returned empty
 
             if line_read.startswith("AGENT"):
-                print(f"A{self.agent_id} DEBUG: {line_read}", flush=True) # Print AGENT debug line to simulator's console
-                # actual_response remains unchanged from a previous non-AGENT line, or empty.
-                # We are skipping this debug line for the 'final' response determination for THIS iteration.
+                logger.info(f"AGENT_OUTPUT A{self.agent_id}: {line_read}") # Log AGENT debug line
                 continue # Read next line
 
-            # If the line is not an AGENT debug line, it's a potential actual response or an error.
             actual_response = line_read
-            # print(f"Agent {self.agent_id} received response: {actual_response}") # DEBUG - This is the raw response from agent's stdout
+            # logger.debug(f"Agent {self.agent_id} received response: {actual_response}") # DEBUG - This is the raw response from agent's stdout
 
-            # Check if this looks like an error message or if it's an empty line (agent might have crashed)
-            # This primarily checks for Python tracebacks or common error keywords from the agent's main response stream.
-            # Note: "not actual_response" was part of the original condition, but an empty line_read is now handled by the EOF check above.
-            # So, if actual_response is empty here, it means it was set by a previous (non-AGENT) line that was empty, which is unlikely to be an error marker itself.
-            # The primary check here is for error keywords.
             if "Traceback" in actual_response or "Error" in actual_response or "Exception" in actual_response:
-                print(f"Sim: Agent {self.agent_id} detected error markers in response: '{actual_response}'. Collecting details.", flush=True)
-                # Potentially an error or crash, try to read more for diagnostics
-                error_output = [actual_response] # Start with the line that has error markers
+                logger.error(f"Sim: Agent {self.agent_id} detected error markers in response: '{actual_response}'. Collecting details.")
+                error_output = [actual_response]
                 try:
                     for _ in range(10): # Read up to 10 more lines for the error
                         if self.process.stdout.closed:
-                            print(f"Sim: Agent {self.agent_id} stdout closed while collecting error context.", flush=True)
+                            logger.warning(f"Sim: Agent {self.agent_id} stdout closed while collecting error context.")
                             break
                         next_line = self.process.stdout.readline().strip()
-                        print(f"Sim: Agent {self.agent_id} raw read (error context): '{next_line}'", flush=True) # Log this attempt too
+                        logger.debug(f"Sim: Agent {self.agent_id} raw read (error context): '{next_line}'")
                         if next_line:
-                            if next_line.startswith("AGENT"): # Also print AGENT lines found during error gathering
-                                print(f"A{self.agent_id} DEBUG: {next_line}", flush=True)
-                                error_output.append(next_line) # Add to error_output to show context
+                            if next_line.startswith("AGENT"):
+                                logger.info(f"AGENT_OUTPUT A{self.agent_id} (error context): {next_line}")
+                                error_output.append(next_line)
                             else:
                                 error_output.append(next_line)
-                        # If actual_response (the first error line) had content, an empty next_line means end of specific error output.
-                        # If actual_response was empty AND next_line is empty, also break (though covered by EOF above mostly)
                         elif not actual_response and not next_line:
                             break
-                        elif actual_response and not next_line: # If first error line had content, but this next_line is empty, stop.
+                        elif actual_response and not next_line:
                             break
-                        # If next_line is empty and actual_response was also empty (unlikely here due to EOF check), break
-                        # elif not next_line:
-                        #     break
 
-
-                    if any(line for line in error_output if line): # Only print if there's something to print
-                        print(f"--- Agent {self.agent_id} Diagnostic Output (from error markers) ---", flush=True)
+                    if any(line for line in error_output if line):
+                        logger.error(f"--- Agent {self.agent_id} Diagnostic Output (from error markers) ---")
                         for err_line in error_output:
-                            # Avoid double printing "AGENT DEBUG:" lines if already handled above for individual AGENT lines
-                            if not err_line.startswith(f"A{self.agent_id} DEBUG:") and not err_line.startswith("AGENT"): # Check both forms
-                                print(f"A{self.agent_id} CAPTURED: {err_line}", flush=True)
-                            elif err_line.startswith("AGENT") and not err_line.startswith(f"A{self.agent_id} DEBUG:"): # Original AGENT line
-                                print(f"A{self.agent_id} CAPTURED: {err_line}", flush=True)
-
-                        print(f"--- End Agent {self.agent_id} Diagnostic ---", flush=True)
-
-                    # actual_response already holds the first line that contained the error string.
-                    # This is what will be returned.
+                            # Log all captured lines, AGENT lines are already prefixed by the logger
+                            logger.error(f"A{self.agent_id} CAPTURED: {err_line}")
+                        logger.error(f"--- End Agent {self.agent_id} Diagnostic ---")
                     break # Exit while loop, error has been processed.
 
                 except Exception as e:
-                    print(f"Sim: Error while trying to read extended output from agent {self.agent_id} (error context): {e}", flush=True)
-                    # actual_response still holds the line that initiated error checking.
+                    logger.exception(f"Sim: Error while trying to read extended output from agent {self.agent_id} (error context): {e}")
                     break # Exit while loop
-
-            # If it's not an AGENT line, and not an error-marled line, then it's a normal response.
             break # Exit while loop, actual_response holds the good response.
 
-        # Final logging for what is being returned.
         if not actual_response:
-            print(f"Sim: Agent {self.agent_id} receive_response is returning empty. Full log buffer for this attempt: {log_buffer}", flush=True)
+            logger.warning(f"Sim: Agent {self.agent_id} receive_response is returning empty. Full log buffer for this attempt: {log_buffer}")
         else:
-            print(f"Sim: Agent {self.agent_id} receive_response determined actual response: '{actual_response}'", flush=True)
+            logger.debug(f"Sim: Agent {self.agent_id} receive_response determined actual response: '{actual_response}'")
 
-        print(f"Sim: Agent {self.agent_id} EXITING receive_response with '{actual_response}' (type: {type(actual_response)})", flush=True) # NEW
+        logger.debug(f"Sim: Agent {self.agent_id} EXITING receive_response with '{actual_response}' (type: {type(actual_response)})")
         return actual_response
 
     def close(self):
@@ -211,7 +184,7 @@ class GameState:
 
         if is_draw or error_message:
             msg = f"ERROR: {error_message}" if error_message else "DRAW."
-            print(f"GAME ENDED ({msg})", flush=True)
+            logger.info(f"GAME ENDED ({msg})")
             self.final_scores = {p.player_id: p.score for p in self.players}
             return
 
@@ -311,12 +284,12 @@ class GameState:
                             f_en = "Unknown Fan"
                     else:
                         # Unexpected format, skip or log error
-                        print(f"WARNING: Unexpected fan item format from PyMahjongGB: {fan_item}", flush=True)
+                        logger.warning(f"Unexpected fan item format from PyMahjongGB: {fan_item}")
                         continue
                     self.win_details.append((fp, cnt, f_zh, f_en)); fan_cnt_total += fp * cnt
 
                 if fan_cnt_total < 8:
-                    print(f"Player {winner_index} HU claim has insufficient fans ({fan_cnt_total} < 8). Treating as Chombo.", flush=True)
+                    logger.info(f"Player {winner_index} HU claim has insufficient fans ({fan_cnt_total} < 8). Treating as Chombo.")
                     self.error_message = f"P{winner_index} Chombo - insufficient fans ({fan_cnt_total})."
                     chombo_penalty_winner = -8 * 3
                     self.players[winner_index].score += chombo_penalty_winner
@@ -336,7 +309,7 @@ class GameState:
 
                     if payer_idx is None:
                         self.error_message = "Payer index not determined for non-self-drawn win."
-                        print(f"GAME ENDED (ERROR): {self.error_message}", flush=True)
+                        logger.error(f"GAME ENDED (ERROR): {self.error_message}")
                         self.final_scores = {p.player_id: p.score for p in self.players}; return
 
                     if is_robbing_kong:
@@ -353,11 +326,11 @@ class GameState:
 
                 self.final_scores = {p.player_id: p.score for p in self.players}
                 win_type_str = "ROBBING KONG" if is_robbing_kong else ("SELF-DRAWN (After Kong)" if was_kong_replacement_draw and is_self_drawn else ("SELF-DRAWN" if is_self_drawn else "DISCARD"))
-                print(f"GAME ENDED (WIN): Player {winner_index} wins with {fan_cnt_total} Fan (+{base_score} Base). Type: {win_type_str}.", flush=True)
-                if self.win_details: print(f"  Fan Details: {self.win_details}", flush=True)
+                logger.info(f"GAME ENDED (WIN): Player {winner_index} wins with {fan_cnt_total} Fan (+{base_score} Base). Type: {win_type_str}.")
+                if self.win_details: logger.info(f"  Fan Details: {self.win_details}")
             except Exception as e:
-                print(f"Error during MahjongFanCalculator for P{winner_index}: {e}", flush=True)
-                import traceback; traceback.print_exc()
+                logger.exception(f"Error during MahjongFanCalculator for P{winner_index}: {e}")
+                # import traceback; traceback.print_exc() # Not needed as logger.exception does this
                 self.error_message = f"P{winner_index} score calculation error: {e}"
                 self.final_scores = {p.player_id: p.score for p in self.players}
         else:

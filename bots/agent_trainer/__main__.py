@@ -22,8 +22,8 @@ def obs2response(model, obs):
 if __name__ == '__main__':
     model = CNNModel()
     # Path should be relative to the execution directory of this script,
-    # which is mahjong_simulator/. The model is in mahjong_simulator/agent_trainer/model/
-    data_dir = 'agent_trainer/model/model_2583.pt'
+    # which is bots/agent_trainer/. The model is in bots/agent_trainer/model/
+    data_dir = 'model/model_2583.pt' # Corrected path
     model.load_state_dict(torch.load(data_dir, map_location = torch.device('cpu'), weights_only=False))
     model.train(False)
     input() # 1

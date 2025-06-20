@@ -2,8 +2,8 @@
 
 import argparse
 import json # For potentially parsing complex agent configs if needed, or simple string split
-from evaluation_manager import EvaluationManager, AgentConfig # Assuming it's in the same directory
-from main import run_game # The actual game runner function, assuming it's in the same directory
+from .evaluation_manager import EvaluationManager, AgentConfig # Assuming it's in the same directory
+from .main import run_game # The actual game runner function, assuming it's in the same directory
 from typing import List, Dict, Any
 from collections import Counter # For checking duplicate names
 
@@ -39,10 +39,17 @@ def main():
     parser.add_argument("mode", choices=["pairwise", "round_robin"],
                         help="Evaluation mode: 'pairwise' or 'round_robin'.")
 
-    parser.add_argument("--agents", type=parse_agent_config, nargs='+', required=True,
+    parser.add_argument("--agents", type=parse_agent_config, nargs='+',
                         help="List of agent configurations. "
                              "Each agent as a string: 'name=BotName,path=path/to/bot'. "
-                             "Example: --agents name=RLBot,path=agent_trainer name=RuleBot,path=base_bot")
+                             "Example: --agents name=RLBot,path=agent_trainer name=RuleBot,path=base_bot. "
+                             "Required if --bot_list_file is not used in round_robin mode. "
+                             "Disallowed if --bot_list_file is used in round_robin mode.")
+
+    parser.add_argument("--bot_list_file", type=str,
+                        help="Path to a file containing a list of bot configurations for round-robin mode "
+                             "(one 'name=BotName,path=path/to/bot' per line). "
+                             "If provided for round_robin, --agents should not be used. Not applicable for pairwise mode.")
 
     # Pairwise specific arguments
     parser.add_argument("--agent_a_name", type=str,
@@ -57,11 +64,44 @@ def main():
     args = parser.parse_args()
 
     eval_manager = EvaluationManager(run_game_func=run_game)
+    all_agent_configs: List[AgentConfig] = []
 
-    all_agent_configs: List[AgentConfig] = args.agents
+    if args.mode == "round_robin":
+        if args.bot_list_file:
+            if args.agents:
+                parser.error("--agents cannot be used with --bot_list_file in round_robin mode.")
+            try:
+                with open(args.bot_list_file, 'r') as f:
+                    for line_num, line in enumerate(f, 1):
+                        line = line.strip()
+                        if not line or line.startswith('#'): # Skip empty lines and comments
+                            continue
+                        try:
+                            all_agent_configs.append(parse_agent_config(line))
+                        except argparse.ArgumentTypeError as e: # Catch errors from parse_agent_config
+                            parser.error(f"Error parsing line {line_num} in '{args.bot_list_file}': {e}")
+            except FileNotFoundError:
+                parser.error(f"Bot list file not found: {args.bot_list_file}")
+            except Exception as e: # Catch other potential file reading errors
+                parser.error(f"Error reading bot list file '{args.bot_list_file}': {e}")
+            if not all_agent_configs:
+                 parser.error(f"No valid agent configurations found in '{args.bot_list_file}'.")
+        elif args.agents:
+            all_agent_configs = args.agents
+        else:
+            parser.error("For round_robin mode, either --agents or --bot_list_file must be provided.")
+    elif args.mode == "pairwise":
+        if args.bot_list_file:
+            parser.error("--bot_list_file is not applicable for pairwise mode.")
+        if not args.agents:
+            parser.error("For pairwise mode, --agents argument is required.")
+        all_agent_configs = args.agents # In pairwise, agents are always from --agents
+
+    if not all_agent_configs: # Should be caught by mode-specific checks above, but as a safeguard
+        parser.error("No agent configurations provided.")
 
     agent_names_list = [agent.get("name", "") for agent in all_agent_configs]
-    if "" in agent_names_list: # Should be caught by parse_agent_config defaulting name
+    if "" in agent_names_list:
         print("Error: One or more agents ended up with an empty name. This should not happen.")
         return
 
@@ -120,18 +160,18 @@ def main():
 
 
 if __name__ == "__main__":
-    # Example command lines (ensure paths are correct relative to execution directory):
+    # Example command lines (ensure paths are correct relative to execution directory, typically project root):
     # To run from project root (e.g., .../MahjongRim):
-    # python mahjong_simulator/run_evaluation.py round_robin --agents name=Bot1,path=mahjong_simulator/base_bot name=Bot2,path=mahjong_simulator/base_bot name=Bot3,path=mahjong_simulator/base_bot name=Bot4,path=mahjong_simulator/base_bot --num_games 1
-    # python mahjong_simulator/run_evaluation.py pairwise --agents name=A1,path=mahjong_simulator/base_bot name=B1,path=agent_trainer --agent_a_name A1 --agent_b_name B1 --num_games 1
-    # (If agent_trainer is at the root, its path might be just "agent_trainer" if run_evaluation.py is also at root, or "../agent_trainer" if run_evaluation.py is in mahjong_simulator)
-    # For simplicity, assuming paths are relative to where the `Agent` class's Popen cwd will be set.
-    # The `Agent` class sets cwd to agent_path, so path should be the directory of the agent itself.
-    # Example assuming executable from project root, and agent_trainer is also at project root:
-    # python mahjong_simulator/run_evaluation.py round_robin --agents name=Bot1,path=base_bot name=Bot2,path=base_bot name=Bot3,path=base_bot name=Bot4,path=base_bot --num_games 1
-    # python mahjong_simulator/run_evaluation.py pairwise --agents name=A1,path=base_bot name=B1,path=agent_trainer --agent_a_name A1 --agent_b_name B1 --num_games 1
-    # (Here, base_bot and agent_trainer are directories expected at the same level as run_evaluation.py, or the paths need to be relative from where script is run)
-    # The Agent class takes agent_path as CWD. So paths like "base_bot" or "agent_trainer" are fine if these folders are in the CWD of run_evaluation.py
-    # If run_evaluation.py is in mahjong_simulator, and base_bot is also in mahjong_simulator, then path="base_bot" is correct.
-    # If agent_trainer is at project root, then path="../agent_trainer" from mahjong_simulator/run_evaluation.py
+    # python mahjong_simulator/run_evaluation.py round_robin --agents name=Bot1,path=bots/base_bot name=Bot2,path=bots/base_bot name=Bot3,path=bots/base_bot name=Bot4,path=bots/base_bot --num_games 1
+    # Example with the moved agent_trainer:
+    # python mahjong_simulator/run_evaluation.py round_robin --agents name=TBot1,path=bots/agent_trainer name=TBot2,path=bots/agent_trainer name=Base1,path=bots/base_bot name=Base2,path=bots/base_bot --num_games 1
+    # Example using the agent_trainer at the project root:
+    # python mahjong_simulator/run_evaluation.py pairwise --agents name=A1,path=bots/base_bot name=B1,path=agent_trainer --agent_a_name A1 --agent_b_name B1 --num_games 1
+    #
+    # Paths for agents are relative to the CWD of the run_evaluation.py script (usually project root).
+    # The Agent class in game_utils.py uses this path as the CWD for the bot's subprocess.
+    # So, if run_evaluation.py is run from project root:
+    #   - For a bot in bots/base_bot, use path="bots/base_bot".
+    #   - For a bot in bots/agent_trainer, use path="bots/agent_trainer".
+    #   - For the agent_trainer at the project root, use path="agent_trainer".
     main()

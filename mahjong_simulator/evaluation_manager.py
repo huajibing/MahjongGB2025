@@ -3,6 +3,7 @@
 import random
 import itertools # For combinations in round-robin
 from typing import List, Dict, Tuple, Optional, Any
+from .logging_utils import logger
 
 # Assuming run_game is in main.py and main.py is in the same directory (mahjong_simulator)
 # If run_game is directly callable, we can import it.
@@ -53,7 +54,7 @@ class EvaluationManager:
         agent_A_path = self._get_agent_path(agent_A_config)
         agent_B_path = self._get_agent_path(agent_B_config)
 
-        print(f"Starting pairwise battle: {agent_A_name} vs {agent_B_name}")
+        logger.info(f"Starting pairwise battle: {agent_A_name} vs {agent_B_name}")
 
         setups_config = {
             "A_B_A_A": [agent_A_path, agent_B_path, agent_A_path, agent_A_path],
@@ -93,10 +94,10 @@ class EvaluationManager:
             }
             current_player_map = player_to_agent_type_map[setup_name]
 
-            print(f"  Running setup: {setup_name} for {num_games_per_setup} games...")
+            logger.info(f"  Running setup: {setup_name} for {num_games_per_setup} games...")
             for game_num in range(num_games_per_setup):
                 battle_results["summary"]["total_games_run"] += 1
-                print(f"    Starting game {game_num + 1}/{num_games_per_setup} for setup {setup_name}...")
+                logger.info(f"    Starting game {game_num + 1}/{num_games_per_setup} for setup {setup_name}...")
 
                 final_scores, winner_index, error_message = self.run_game(agent_path_list)
 
@@ -110,12 +111,12 @@ class EvaluationManager:
                 setup_summary_details["games"].append(game_result_details)
 
                 if error_message:
-                    print(f"      Game ended with error: {error_message}")
+                    logger.error(f"      Game ended with error: {error_message}")
                     battle_results["summary"]["errors"] += 1
                     continue
 
                 if final_scores is None:
-                    print("      Game ended with no scores and no error. Skipping score processing.")
+                    logger.warning("      Game ended with no scores and no error. Skipping score processing.")
                     battle_results["summary"]["errors"] += 1
                     continue
 
@@ -140,10 +141,10 @@ class EvaluationManager:
                     if winning_agent_type == "A": winner_name_str = agent_A_name
                     elif winning_agent_type == "B": winner_name_str = agent_B_name
                     else: winner_name_str = f"Unknown (Player {winner_index})"
-                print(f"      Game {game_num + 1} ended. Winner: {winner_name_str}. Scores: {final_scores}")
+                logger.info(f"      Game {game_num + 1} ended. Winner: {winner_name_str}. Scores: {final_scores}")
 
             battle_results["setups_results"].append(setup_summary_details)
-            print(f"  Finished setup: {setup_name}")
+            logger.info(f"  Finished setup: {setup_name}")
 
         for agent_name_key in battle_results["summary"]:
             if isinstance(battle_results["summary"][agent_name_key], dict):
@@ -152,15 +153,15 @@ class EvaluationManager:
                     agent_stats["win_rate"] = agent_stats["wins"] / agent_stats["games_played"]
                     agent_stats["avg_score"] = agent_stats["total_score"] / agent_stats["games_played"]
 
-        print("\nPairwise Battle Summary:")
-        print(f"  Total games run: {battle_results['summary']['total_games_run']}")
-        print(f"  Errors: {battle_results['summary']['errors']}")
+        logger.info("\nPairwise Battle Summary:")
+        logger.info(f"  Total games run: {battle_results['summary']['total_games_run']}")
+        logger.info(f"  Errors: {battle_results['summary']['errors']}")
 
         summary_A_data = battle_results['summary'][agent_A_name]
-        print(f"  {agent_A_name}: Wins={summary_A_data['wins']}, Games Played={summary_A_data['games_played']}, Win Rate={summary_A_data['win_rate']:.2f}, Avg Score={summary_A_data['avg_score']:.2f}")
+        logger.info(f"  {agent_A_name}: Wins={summary_A_data['wins']}, Games Played={summary_A_data['games_played']}, Win Rate={summary_A_data['win_rate']:.2f}, Avg Score={summary_A_data['avg_score']:.2f}")
         if agent_A_name != agent_B_name: # Check if names are different before printing B's stats
             summary_B_data = battle_results['summary'][agent_B_name]
-            print(f"  {agent_B_name}: Wins={summary_B_data['wins']}, Games Played={summary_B_data['games_played']}, Win Rate={summary_B_data['win_rate']:.2f}, Avg Score={summary_B_data['avg_score']:.2f}")
+            logger.info(f"  {agent_B_name}: Wins={summary_B_data['wins']}, Games Played={summary_B_data['games_played']}, Win Rate={summary_B_data['win_rate']:.2f}, Avg Score={summary_B_data['avg_score']:.2f}")
 
         self.evaluation_results[f"pairwise_{agent_A_name}_vs_{agent_B_name}"] = battle_results
         return battle_results
@@ -170,7 +171,7 @@ class EvaluationManager:
                                    num_games_per_matchup: int = 1) -> Dict[str, Any]:
 
         num_total_agents = len(list_of_agent_configs)
-        print(f"Starting round-robin tournament for {num_total_agents} agents.")
+        logger.info(f"Starting round-robin tournament for {num_total_agents} agents.")
 
         base_return_structure = {
             "error": "",
@@ -186,14 +187,14 @@ class EvaluationManager:
 
         if num_total_agents < 4:
             msg = "Round-robin tournament with '4 distinct agents per table' setup requires at least 4 unique agents."
-            print(msg)
+            logger.error(msg)
             base_return_structure["error"] = msg
             return base_return_structure
 
         agent_names = [self._get_agent_name(conf) for conf in list_of_agent_configs]
         if len(agent_names) != len(set(agent_names)):
             msg = "Duplicate agent names found. Agent names must be unique for round-robin summary."
-            print(msg)
+            logger.error(msg)
             base_return_structure["error"] = msg
             return base_return_structure
 
@@ -207,11 +208,11 @@ class EvaluationManager:
         matchup_agent_indices_combinations = list(itertools.combinations(agent_indices, 4))
 
         if not matchup_agent_indices_combinations:
-             print("No matchups could be generated despite having >= 4 agents. This is unexpected.")
+             logger.error("No matchups could be generated despite having >= 4 agents. This is unexpected.")
              tournament_results["error"] = "Internal error: No matchups generated for >= 4 agents."
              return tournament_results
 
-        print(f"Generated {len(matchup_agent_indices_combinations)} unique matchups of 4 agents.")
+        logger.info(f"Generated {len(matchup_agent_indices_combinations)} unique matchups of 4 agents.")
 
         for matchup_idx_tuple in matchup_agent_indices_combinations:
             current_matchup_configs = [list_of_agent_configs[i] for i in matchup_idx_tuple]
@@ -222,7 +223,7 @@ class EvaluationManager:
                 "matchup_participants_configs": current_matchup_configs,
                 "games": []
             }
-            print(f"  Processing matchup: {', '.join(current_matchup_agent_names)}")
+            logger.info(f"  Processing matchup: {', '.join(current_matchup_agent_names)}")
 
             for game_num in range(num_games_per_matchup):
                 tournament_results["total_games_run"] += 1
@@ -233,7 +234,7 @@ class EvaluationManager:
                 game_agent_paths = [self._get_agent_path(conf) for conf in game_specific_agent_order_configs]
 
                 table_agent_names_ordered = [self._get_agent_name(c) for c in game_specific_agent_order_configs]
-                print(f"    Starting game {game_num + 1}/{num_games_per_matchup} for matchup. Agents at table (Seat 0 to 3): {table_agent_names_ordered}")
+                logger.info(f"    Starting game {game_num + 1}/{num_games_per_matchup} for matchup. Agents at table (Seat 0 to 3): {table_agent_names_ordered}")
 
                 final_scores, winner_index, error_message = self.run_game(game_agent_paths)
 
@@ -248,12 +249,12 @@ class EvaluationManager:
                 matchup_detail["games"].append(game_run_details)
 
                 if error_message:
-                    print(f"      Game ended with error: {error_message}")
+                    logger.error(f"      Game ended with error: {error_message}")
                     tournament_results["errors"] += 1
                     continue
 
                 if final_scores is None:
-                    print("      Game ended with no scores and no error message. Counting as error for stat purposes.")
+                    logger.warning("      Game ended with no scores and no error message. Counting as error for stat purposes.")
                     tournament_results["errors"] += 1
                     continue
 
@@ -271,10 +272,10 @@ class EvaluationManager:
                 if winner_index is not None:
                     winning_agent_config_at_table = game_specific_agent_order_configs[winner_index]
                     winner_display_name = self._get_agent_name(winning_agent_config_at_table)
-                print(f"      Game {game_num + 1} ended. Winner: {winner_display_name}. Scores: {final_scores}")
+                logger.info(f"      Game {game_num + 1} ended. Winner: {winner_display_name}. Scores: {final_scores}")
 
             tournament_results["matchups_details"].append(matchup_detail)
-            print(f"  Finished matchup: {', '.join(current_matchup_agent_names)}")
+            logger.info(f"  Finished matchup: {', '.join(current_matchup_agent_names)}")
 
         for agent_name_key, stats_data in tournament_results["summary_table"].items():
             if stats_data["games_played"] > 0:
@@ -291,19 +292,19 @@ class EvaluationManager:
            for i, (name, stats_dict_item) in enumerate(sorted_agents_for_ranking)
         ]
 
-        print("\nRound-Robin Tournament Summary:")
-        print(f"  Total agents participated: {num_total_agents}")
-        print(f"  Total unique matchups of 4 agents: {len(matchup_agent_indices_combinations)}")
-        print(f"  Games per matchup: {num_games_per_matchup}")
-        print(f"  Total games run: {tournament_results['total_games_run']}")
-        print(f"  Errors during games: {tournament_results['errors']}")
+        logger.info("\nRound-Robin Tournament Summary:")
+        logger.info(f"  Total agents participated: {num_total_agents}")
+        logger.info(f"  Total unique matchups of 4 agents: {len(matchup_agent_indices_combinations)}")
+        logger.info(f"  Games per matchup: {num_games_per_matchup}")
+        logger.info(f"  Total games run: {tournament_results['total_games_run']}")
+        logger.info(f"  Errors during games: {tournament_results['errors']}")
 
-        print("\n  Ranking:")
+        logger.info("\n  Ranking:")
         if not tournament_results["ranking"]:
-            print("    No ranking available (e.g., no games played or error before ranking).")
+            logger.info("    No ranking available (e.g., no games played or error before ranking).")
         for rank_info in tournament_results["ranking"]:
            s_item = rank_info['stats']
-           print(f"  {rank_info['rank']:>2}. {rank_info['name']:<20}: Wins={s_item['wins']:>3}, GP={s_item['games_played']:>3}, WR={s_item['win_rate']:.2f}, AvgScore={s_item['avg_score']:>+7.2f}")
+           logger.info(f"  {rank_info['rank']:>2}. {rank_info['name']:<20}: Wins={s_item['wins']:>3}, GP={s_item['games_played']:>3}, WR={s_item['win_rate']:.2f}, AvgScore={s_item['avg_score']:>+7.2f}")
 
         self.evaluation_results[f"round_robin_{num_total_agents}_agents"] = tournament_results
         return tournament_results
@@ -313,7 +314,7 @@ if __name__ == '__main__':
 
     # Dummy run_game for testing EvaluationManager structure
     def dummy_run_game(agent_paths: List[str]) -> Tuple[Optional[Dict[int, int]], Optional[int], Optional[str]]:
-        print(f"Dummy run_game called with: {agent_paths}")
+        logger.info(f"Dummy run_game called with: {agent_paths}")
         # Simulate scores: player 0 wins, others get 0
         scores = {i: 0 for i in range(4)}
         winner_idx = 0 # Player 0 wins
@@ -340,10 +341,10 @@ if __name__ == '__main__':
     agent3_conf: AgentConfig = {"name": "Agent3", "path": "path/to/agent3"}
     agent4_conf: AgentConfig = {"name": "Agent4", "path": "path/to/agent4"}
 
-    print("\n--- Testing Pairwise (Structure Only) ---")
+    logger.info("\n--- Testing Pairwise (Structure Only) ---")
     # manager.run_pairwise_battle(agent1_conf, agent2_conf, num_games_per_setup=1) # Keep test minimal for now
 
-    print("\n--- Testing Round Robin (Structure Only) ---")
+    logger.info("\n--- Testing Round Robin (Structure Only) ---")
     all_agents_for_robin = [
         {"name": "AgentRR1", "path": "base_bot"}, # Assuming base_bot is a valid path
         {"name": "AgentRR2", "path": "base_bot"},
@@ -370,6 +371,6 @@ if __name__ == '__main__':
     # all_agents_for_robin_5 = all_agents_for_robin + [agent5_conf]
     # manager.run_round_robin_tournament(all_agents_for_robin_5, num_games_per_matchup=1)
 
-    print("\nEvaluationManager internal results stored:")
+    logger.info("\nEvaluationManager internal results stored:")
     for key, res_val in manager.evaluation_results.items():
-        print(f"- {key}: {res_val.get('summary', res_val.get('agent_names', 'Details N/A'))}")
+        logger.info(f"- {key}: {res_val.get('summary', res_val.get('agent_names', 'Details N/A'))}")
