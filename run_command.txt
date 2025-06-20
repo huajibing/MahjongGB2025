@@ -1,0 +1,3 @@
+python -m mahjong_simulator.run_evaluation round_robin `
+    --bot_list_file test_bot_list.txt `
+    --num_games 1
